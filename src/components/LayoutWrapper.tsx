@@ -122,7 +122,7 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
         <div className="h-full px-4 md:px-6 flex items-center justify-between gap-3">
           {/* 좌측: 타이틀 */}
           <h1 className="font-bold truncate text-[clamp(16px,3.5vw,20px)]">
-            zunos Invsetment
+            Buy low sell high
           </h1>
 
           {/* 우측: 환영문구(데스크탑) + 로그아웃 + 햄버거 */}
