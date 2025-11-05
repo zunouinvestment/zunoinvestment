@@ -65,7 +65,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm bg-white p-14 rounded-xl shadow-md">
         {/* ✅ 샤우팅 폰트 적용 */}
         <h1
-          className="text-5xl font-bold text-center mb-6 font-shouting text-gray-900 tracking-wide"
+          className="text-4xl font-bold text-center mb-6 font-shouting text-gray-900 tracking-wide"
         >
           Buy low Sell high.
         </h1>
