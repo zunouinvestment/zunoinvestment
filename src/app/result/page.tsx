@@ -42,7 +42,7 @@ type KisPriceApiResponse = {
   currentPrice: number;
 };
 
-export default function ResultPage(): JSX.Element {
+export default function ResultPage() {
   const [rows, setRows] = useState<ResultRow[]>([]);
   const rowsRef = useRef<ResultRow[]>([]);
   useEffect(() => {

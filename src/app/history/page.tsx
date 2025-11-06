@@ -29,7 +29,7 @@ type DetailRow = {
   profitSum: number;
 };
 
-export default function HistoryPage(): JSX.Element {
+export default function HistoryPage() {
   const [userId, setUserId] = useState<string | null>(null);
 
   const currentYear = new Date().getFullYear();

@@ -50,7 +50,7 @@ type KisPriceApiResponse = {
   changePrice?: number
 }
 
-export default function StrategyPage(): JSX.Element {
+export default function StrategyPage() {
   const [rows, setRows] = useState<StrategyRow[]>([])
   const rowsRef = useRef<StrategyRow[]>([])
   useEffect(() => {

@@ -53,7 +53,7 @@ type StocksSearchApiResponse = {
   error?: string;
 };
 
-export default function NowPage(): JSX.Element {
+export default function NowPage() {
   const [userId, setUserId] = useState<string | null>(null);
 
   const [rows, setRows] = useState<NowRow[]>([]);
@@ -480,7 +480,7 @@ export default function NowPage(): JSX.Element {
     }
   };
 
-  const renderSearchModal = (): JSX.Element | null => {
+  const renderSearchModal = () => {
     if (!isSearchOpen) return null;
 
     return (
