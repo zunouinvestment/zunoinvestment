@@ -21,6 +21,7 @@ type StrategyRow = {
   lowPrice?: number
 
   targetPrice?: number
+  buyDate?: string | null
 }
 
 type StockItemFromDb = {
@@ -34,6 +35,7 @@ type StockItemFromDb = {
   is_sold: boolean
   sold_at: string | null
   target_price: number | null
+  buy_date: string | null
   created_at: string
   updated_at: string
 }
@@ -62,6 +64,17 @@ export default function StrategyPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [isAutoRefresh, setIsAutoRefresh] = useState(false)
 
+  // ---------- 날짜 포맷터 (YYYY.M.D) ----------
+  const formatDate = (value: string | null | undefined): string => {
+    if (!value) return ''
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return value
+    const y = date.getFullYear()
+    const m = date.getMonth() + 1
+    const d = date.getDate()
+    return `${y}.${m}.${d}`
+  }
+
   // ---------- 초기 로딩 ----------
   useEffect(() => {
     const load = async (): Promise<void> => {
@@ -82,7 +95,7 @@ export default function StrategyPage() {
       const { data, error } = await supabase
         .from('stock_items')
         .select(
-          'id, user_id, code, name, is_real_buy, avg_price, quantity, is_sold, sold_at, target_price, created_at',
+          'id, user_id, code, name, is_real_buy, avg_price, quantity, is_sold, sold_at, target_price, buy_date, created_at',
         )
         .eq('user_id', userData.user.id)
         .eq('is_sold', false)
@@ -106,6 +119,7 @@ export default function StrategyPage() {
           avgPrice: Number(item.avg_price ?? 0),
           quantity: Number(item.quantity ?? 0),
           targetPrice: Number(item.target_price ?? 0),
+          buyDate: item.buy_date,
         }),
       )
 
@@ -502,6 +516,7 @@ export default function StrategyPage() {
               highPrice,
               lowPrice,
               targetPrice,
+              buyDate,
             } = row
 
             const investment =
@@ -577,58 +592,66 @@ export default function StrategyPage() {
                 key={row.id}
                 className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm text-sm sm:text-base"
               >
-                {/* 헤더 */}
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex flex-col gap-1">
-                    <div className="flex flex-wrap items-center gap-2">
+                {/* 헤더 영역 */}
+                <div className="flex flex-col gap-2">
+                  {/* 1행: 전략 라벨 + 체크박스들 */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
                       <span
                         className={`rounded-full px-2 py-[2px] text-xs sm:text-sm ${decisionInfo.className}`}
                       >
                         {decisionInfo.label}
                       </span>
                     </div>
-                    <div className="flex flex-col">
-                      <span className="text-lg sm:text-xl font-semibold">
-                        {row.name}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-600">
-                      <span className={changeRateClass}>
-                        등락률 {changeRateText}
-                      </span>
-                      {row.soldAt && (
-                        <span className="rounded-full bg-gray-100 px-2 py-[2px] text-xs text-gray-700">
-                          매도일{' '}
-                          {new Date(
-                            row.soldAt,
-                          ).toLocaleDateString()}
-                        </span>
-                      )}
+
+                    <div className="flex items-center gap-3 text-xs sm:text-sm">
+                      <label className="inline-flex items-center gap-1 text-gray-700">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4"
+                          checked={row.isRealBuy}
+                          disabled
+                        />
+                        <span>실매수</span>
+                      </label>
+                      <label className="inline-flex items-center gap-1 text-gray-700">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4"
+                          checked={row.isSold}
+                          disabled={isMutating}
+                          onChange={() => {
+                            void handleToggleSold(row)
+                          }}
+                        />
+                        <span>매도완료</span>
+                      </label>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3 text-xs sm:text-sm">
-                    <label className="inline-flex items-center gap-1 text-gray-700">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4"
-                        checked={row.isRealBuy}
-                        disabled
-                      />
-                      <span>실매수</span>
-                    </label>
-                    <label className="inline-flex items-center gap-1 text-gray-700">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4"
-                        checked={row.isSold}
-                        disabled={isMutating}
-                        onChange={() => {
-                          void handleToggleSold(row)
-                        }}
-                      />
-                      <span>매도완료</span>
-                    </label>
+                  {/* 2행: 종목명 + 매수일 + 코드 (👉 여기서 종목명 오른쪽에 매수일) */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-lg sm:text-xl font-semibold">
+                      {row.name}
+                    </span>
+                    {buyDate && (
+                      <span className="rounded-full bg-gray-100 px-2 py-[2px] text-[11px] sm:text-xs text-gray-700">
+                        매수일 {formatDate(buyDate)}
+                      </span>
+                    )}
+
+                  </div>
+
+                  {/* 3행: 등락률 + 매도일 */}
+                  <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-600">
+                    <span className={changeRateClass}>
+                      등락률 {changeRateText}
+                    </span>
+                    {row.soldAt && (
+                      <span className="rounded-full bg-gray-100 px-2 py-[2px] text-xs text-gray-700">
+                        매도일 {formatDate(row.soldAt)}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -691,7 +714,7 @@ export default function StrategyPage() {
 
                 {/* 전략 구간 */}
                 <div className="flex flex-col gap-2 rounded-lg bg-gray-50 p-3 text-xs sm:text-sm">
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center justify_between gap-2">
                     <span className="text-xs font-semibold text-gray-600">
                       전략 구간 (Drop / Ready / Sell1 / Sell2)
                     </span>

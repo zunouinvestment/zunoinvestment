@@ -42,6 +42,24 @@ type KisPriceApiResponse = {
   currentPrice: number;
 };
 
+// 날짜 표시용: YYYY.MM.DD
+const formatDisplayDate = (dateStr?: string | null): string => {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}.${m}.${day}`;
+};
+
+// input[type="date"]용: YYYY-MM-DD
+const formatDateInput = (dateStr?: string | null): string => {
+  if (!dateStr) return '';
+  // ISO('2025-02-19T00:00:00Z')든 '2025-02-19'든 앞 10자리만 사용
+  return dateStr.slice(0, 10);
+};
+
 export default function ResultPage() {
   const [rows, setRows] = useState<ResultRow[]>([]);
   const rowsRef = useRef<ResultRow[]>([]);
@@ -218,7 +236,7 @@ export default function ResultPage() {
 
   const handleDateChange = (
     id: string,
-    field: 'buyDate',
+    field: 'buyDate' | 'soldAt',
     value: string,
   ): void => {
     setRows((prev) =>
@@ -262,6 +280,8 @@ export default function ResultPage() {
           real_profit: real,
           extra_cost: extraCost,
           buy_date: row.buyDate || null,
+          // ✅ 매도일도 함께 저장
+          sold_at: row.soldAt || null,
         })
         .eq('id', id);
 
@@ -561,7 +581,7 @@ export default function ResultPage() {
             return (
               <div
                 key={row.id}
-                className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm text-sm sm:text-base"
+                className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm text.sm sm:text-base"
               >
                 {/* 헤더 */}
                 <div className="flex items-start justify-between gap-3">
@@ -578,15 +598,14 @@ export default function ResultPage() {
                     <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-600">
                       {row.buyDate && (
                         <span className="rounded-full bg-gray-100 px-2 py-[2px] text-[11px] sm:text-xs text-gray-700">
-                          매수일 {row.buyDate}
+                          매수일{' '}
+                          {formatDisplayDate(row.buyDate)}
                         </span>
                       )}
                       {row.soldAt && (
                         <span className="rounded-full bg-gray-100 px-2 py-[2px] text-[11px] sm:text-xs text-gray-700">
                           매도일{' '}
-                          {new Date(
-                            row.soldAt,
-                          ).toLocaleDateString()}
+                          {formatDisplayDate(row.soldAt)}
                         </span>
                       )}
                     </div>
@@ -766,6 +785,28 @@ export default function ResultPage() {
                           handleDateChange(
                             row.id,
                             'buyDate',
+                            e.target.value,
+                          )
+                        }
+                        onBlur={() => {
+                          void handleSaveRow(row.id);
+                        }}
+                      />
+                    </label>
+
+                    {/* ✅ 매도일 에디터 추가 */}
+                    <label className="flex flex-col gap-0.5">
+                      <span className="text-xs text-gray-500">
+                        매도일
+                      </span>
+                      <input
+                        type="date"
+                        className="w-full rounded border px-2 py-1 text-xs sm:text-sm"
+                        value={formatDateInput(row.soldAt)}
+                        onChange={(e) =>
+                          handleDateChange(
+                            row.id,
+                            'soldAt',
                             e.target.value,
                           )
                         }
