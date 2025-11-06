@@ -1,5 +1,6 @@
 // src/lib/kisClient.ts
 import 'server-only';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 const BASE_URL =
   process.env.KIS_BASE_URL ??
@@ -9,7 +10,6 @@ const APP_KEY = process.env.HANKUK_API_KEY;
 const APP_SECRET = process.env.HANKUK_SECRET_KEY;
 
 if (!APP_KEY || !APP_SECRET) {
-  // eslint-disable-next-line no-console
   console.error(
     '[KIS] HANKUK_API_KEY 또는 HANKUK_SECRET_KEY 환경변수가 설정되어 있지 않습니다.',
   );
@@ -18,22 +18,28 @@ if (!APP_KEY || !APP_SECRET) {
 interface KisTokenResponse {
   access_token: string;
   token_type: string;
-  // KIS 문서에는 expires_in이 있을 수 있지만,
-  // 여기서는 "하루 1회" 원칙에 맞춰 프로세스 생명주기 동안 재사용만 합니다.
   expires_in?: number;
+}
+
+interface KisTokenRow {
+  id: number;
+  provider: string;
+  access_token: string;
+  expires_at: string;
+  created_at: string;
 }
 
 interface KisPriceRawOutput {
   stck_shrn_iscd?: string; // 단축코드 (6자리)
-  hts_kor_isnm?: string;   // 한글 종목명
+  hts_kor_isnm?: string; // 한글 종목명
   prdt_abrv_name?: string;
-  stck_prpr?: string;      // 현재가
-  stck_oprc?: string;      // 시가
-  stck_hgpr?: string;      // 고가
-  stck_lwpr?: string;      // 저가
-  acml_vol?: string;       // 거래량
-  prdy_ctrt?: string;      // 전일 대비율 (%)
-  prdy_vrss?: string;      // 전일 대비 금액
+  stck_prpr?: string; // 현재가
+  stck_oprc?: string; // 시가
+  stck_hgpr?: string; // 고가
+  stck_lwpr?: string; // 저가
+  acml_vol?: string; // 거래량
+  prdy_ctrt?: string; // 전일 대비율 (%)
+  prdy_vrss?: string; // 전일 대비 금액
 }
 
 interface KisPriceApiResponse {
@@ -51,20 +57,80 @@ export interface KisPriceResult {
   highPrice: number;
   lowPrice: number;
   volume: number;
-  changeRate: number;    // 등락률 (%)
-  changePrice?: number;  // 전일대비 금액
+  changeRate: number; // 등락률 (%)
+  changePrice?: number; // 전일대비 금액
 }
 
-// ---- 토큰 캐시 (1일 1회 발급 원칙) ----
-let cachedToken: string | null = null;
-// 동시에 여러 요청이 들어왔을 때 tokenP를 여러 번 안 때리도록 막기용
-let issuingPromise: Promise<string> | null = null;
+// ---- 메모리 캐시 (프로세스 단위) ----
+let memoryToken: { value: string; expiresAtMs: number } | null =
+  null;
 
-/**
- * 실제로 KIS에 요청해서 새로운 access_token 발급
- * (내부에서만 사용)
- */
-async function issueNewToken(): Promise<string> {
+// DB 토큰 관리용 상수
+const TOKEN_PROVIDER = 'KIS';
+// 실제 만료(24h)보다 조금 짧게 23시간만 쓰도록 버퍼
+const TOKEN_LIFETIME_MS = 23 * 60 * 60 * 1000;
+
+// ---------- DB에서 토큰 불러오기 ----------
+async function loadTokenFromDb(): Promise<{
+  token: string;
+  expiresAtMs: number;
+} | null> {
+  const { data, error } = await supabaseAdmin
+    .from('kis_tokens')
+    .select('*')
+    .eq('provider', TOKEN_PROVIDER)
+    .order('expires_at', { ascending: false })
+    .limit(1);
+
+  if (error) {
+    console.error('[KIS] DB 토큰 조회 오류:', error);
+    return null;
+  }
+
+  const rows = data as KisTokenRow[] | null;
+  const row = rows?.[0];
+  if (!row) return null;
+
+  const expiresAtMs = new Date(row.expires_at).getTime();
+  if (Number.isNaN(expiresAtMs)) return null;
+
+  const now = Date.now();
+  if (expiresAtMs <= now) {
+    // 이미 만료된 토큰이면 무시
+    return null;
+  }
+
+  return { token: row.access_token, expiresAtMs };
+}
+
+// ---------- DB에 새 토큰 저장 ----------
+async function saveTokenToDb(
+  token: string,
+): Promise<{ token: string; expiresAtMs: number }> {
+  const now = Date.now();
+  const expiresAtMs = now + TOKEN_LIFETIME_MS;
+  const expiresAtIso = new Date(expiresAtMs).toISOString();
+
+  const { error } = await supabaseAdmin
+    .from('kis_tokens')
+    .insert({
+      provider: TOKEN_PROVIDER,
+      access_token: token,
+      expires_at: expiresAtIso,
+    });
+
+  if (error) {
+    console.error('[KIS] DB 토큰 저장 오류:', error);
+  }
+
+  return { token, expiresAtMs };
+}
+
+// ---------- 실제 KIS에 요청해서 새 토큰 발급 ----------
+async function issueNewToken(): Promise<{
+  token: string;
+  expiresAtMs: number;
+}> {
   if (!APP_KEY || !APP_SECRET) {
     throw new Error('[KIS] AppKey/AppSecret 환경변수가 없습니다.');
   }
@@ -72,7 +138,7 @@ async function issueNewToken(): Promise<string> {
   const res = await fetch(`${BASE_URL}/oauth2/tokenP`, {
     method: 'POST',
     headers: {
-      // ✅ 이 포맷이 네가 쓰던 "잘 되던" 포맷 (JSON)
+      // 기존에 잘 쓰던 JSON 포맷 그대로 유지
       'Content-Type': 'application/json; charset=utf-8',
     },
     body: JSON.stringify({
@@ -85,7 +151,6 @@ async function issueNewToken(): Promise<string> {
 
   if (!res.ok) {
     const text = await res.text();
-    // eslint-disable-next-line no-console
     console.error('[KIS] tokenP HTTP error:', res.status, text);
     throw new Error(
       `[KIS] 접근토큰 발급 실패: ${res.status} ${text}`,
@@ -98,44 +163,38 @@ async function issueNewToken(): Promise<string> {
     throw new Error('[KIS] access_token이 응답에 없습니다.');
   }
 
-  // 여기서 딱 1번만 발급해서 캐시에 보관
-  cachedToken = data.access_token;
-
-  // eslint-disable-next-line no-console
   console.log('[KIS] 새로운 access_token 발급 완료');
 
-  return cachedToken;
+  // DB에 저장하면서 만료 시간 계산
+  return saveTokenToDb(data.access_token);
 }
 
-/**
- * KIS access_token 가져오기
- * - 이미 발급된 토큰이 있으면 그대로 재사용
- * - 없을 때만 tokenP 호출 → "1일 1회" 원칙에 최대한 맞춰 사용
- * - 동시에 여러 요청이 들어와도 tokenP는 딱 1번만 호출
- */
+// ---------- 공개 함수: KIS access_token 가져오기 ----------
 export async function getKisAccessToken(): Promise<string> {
-  // 이미 토큰이 있다면 바로 리턴
-  if (cachedToken) {
-    return cachedToken;
+  const now = Date.now();
+
+  // 1) 메모리 캐시에 유효한 토큰이 있으면 바로 사용
+  if (memoryToken && memoryToken.expiresAtMs > now) {
+    return memoryToken.value;
   }
 
-  // 누군가 이미 발급 중이면 그 Promise 기다렸다가 결과 공유
-  if (issuingPromise) {
-    return issuingPromise;
+  // 2) DB에서 최신 유효 토큰을 읽어오기
+  const dbToken = await loadTokenFromDb();
+  if (dbToken && dbToken.expiresAtMs > now) {
+    memoryToken = {
+      value: dbToken.token,
+      expiresAtMs: dbToken.expiresAtMs,
+    };
+    return dbToken.token;
   }
 
-  // 실제 발급 시작
-  issuingPromise = issueNewToken()
-    .catch((err) => {
-      // 발급 실패하면 캐시를 남기면 안 되므로 초기화
-      cachedToken = null;
-      throw err;
-    })
-    .finally(() => {
-      issuingPromise = null;
-    });
-
-  return issuingPromise;
+  // 3) DB에도 유효한 토큰이 없다 → 새로 발급
+  const newToken = await issueNewToken();
+  memoryToken = {
+    value: newToken.token,
+    expiresAtMs: newToken.expiresAtMs,
+  };
+  return newToken.token;
 }
 
 /**
@@ -167,8 +226,8 @@ export async function getDomesticStockPrice(
   const token = await getKisAccessToken();
 
   const params = new URLSearchParams({
-    FID_COND_MRKT_DIV_CODE: 'UN', // ✅ 통합 (KRX + NXT)
-    FID_INPUT_ISCD: code,         // 6자리 종목코드
+    FID_COND_MRKT_DIV_CODE: 'UN', // 통합 (KRX + NXT)
+    FID_INPUT_ISCD: code, // 6자리 종목코드
   });
 
   const url = `${BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-price?${params.toString()}`;
@@ -188,7 +247,6 @@ export async function getDomesticStockPrice(
 
   if (!res.ok) {
     const text = await res.text();
-    // eslint-disable-next-line no-console
     console.error(
       '[KIS] inquire-price HTTP error:',
       res.status,
@@ -202,7 +260,6 @@ export async function getDomesticStockPrice(
   const data = (await res.json()) as KisPriceApiResponse;
 
   if (data.rt_cd !== '0') {
-    // eslint-disable-next-line no-console
     console.error(
       '[KIS] inquire-price biz error:',
       data.msg_cd,
