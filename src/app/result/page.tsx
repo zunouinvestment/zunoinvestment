@@ -1,4 +1,3 @@
-// src/app/result/page.tsx
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
@@ -15,12 +14,12 @@ type ResultRow = {
   avgPrice: number;
   quantity: number;
 
-  sellPrice: number;      // 매도가액
-  realProfit: number;     // 실제 수익금 (입력)
-  extraCost: number;      // 기타비용 (계산 또는 기존 값)
+  sellPrice: number;
+  realProfit: number;
+  extraCost: number;
   buyDate?: string | null;
 
-  currentPrice?: number;  // (옵션) 현재가 - KIS 시세
+  currentPrice?: number;
 };
 
 type StockItemFromDb = {
@@ -44,7 +43,6 @@ type KisPriceApiResponse = {
 };
 
 export default function ResultPage(): JSX.Element {
-  const [userId, setUserId] = useState<string | null>(null);
   const [rows, setRows] = useState<ResultRow[]>([]);
   const rowsRef = useRef<ResultRow[]>([]);
   useEffect(() => {
@@ -54,7 +52,7 @@ export default function ResultPage(): JSX.Element {
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isMutating, setIsMutating] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [isAutoRefresh, setIsAutoRefresh] = useState(false); // 기본 OFF
+  const [isAutoRefresh, setIsAutoRefresh] = useState(false);
 
   // ---------- 초기 로딩 ----------
   useEffect(() => {
@@ -71,8 +69,6 @@ export default function ResultPage(): JSX.Element {
         return;
       }
 
-      setUserId(userData.user.id);
-
       const { data, error } = await supabase
         .from('stock_items')
         .select(
@@ -83,7 +79,6 @@ export default function ResultPage(): JSX.Element {
         .order('sold_at', { ascending: false });
 
       if (error) {
-        // eslint-disable-next-line no-console
         console.error('[Result] 초기 로딩 에러:', error);
         setErrorMsg(
           'Result 데이터를 불러오는 중 오류가 발생했습니다.',
@@ -148,11 +143,10 @@ export default function ResultPage(): JSX.Element {
         if (result.status === 'fulfilled') {
           const value = result.value;
           priceMap.set(value.code, value);
-        } else {
-          // eslint-disable-next-line no-console
+        } else if (result.status === 'rejected') {
           console.warn(
             '[Result] 시세 갱신 실패:',
-            (result as any).reason,
+            result.reason,
           );
         }
       });
@@ -167,8 +161,7 @@ export default function ResultPage(): JSX.Element {
           };
         }),
       );
-    } catch (error) {
-      // eslint-disable-next-line no-console
+    } catch (error: unknown) {
       console.error('[Result] 시세 갱신 에러:', error);
       setErrorMsg('시세를 갱신하는 중 오류가 발생했습니다.');
     }
@@ -186,7 +179,6 @@ export default function ResultPage(): JSX.Element {
         if (latest.length > 0) {
           await refreshPricesOnce(latest);
         }
-        // eslint-disable-next-line no-await-in-loop
         await new Promise<void>((resolve) => {
           window.setTimeout(resolve, 2000);
         });
@@ -258,7 +250,6 @@ export default function ResultPage(): JSX.Element {
       const buyBase = avg && qty ? avg * qty : 0;
       const totalSell = sell && qty ? sell * qty : 0;
 
-      // 기타비용 = 총매도액 - 매수금액 - 실제수익
       const extraCost =
         buyBase > 0 || totalSell > 0 || real !== 0
           ? totalSell - buyBase - real
@@ -275,7 +266,6 @@ export default function ResultPage(): JSX.Element {
         .eq('id', id);
 
       if (error) {
-        // eslint-disable-next-line no-console
         console.error(
           '[Result] handleSaveRow Supabase error:',
           error,
@@ -283,17 +273,15 @@ export default function ResultPage(): JSX.Element {
         throw error;
       }
 
-      // 로컬에도 extraCost 반영
       setRows((prev) =>
         prev.map((r) =>
           r.id === id ? { ...r, extraCost } : r,
         ),
       );
-    } catch (error: any) {
-      // eslint-disable-next-line no-console
+    } catch (error: unknown) {
       console.error(
         '[Result] handleSaveRow JS error:',
-        error?.message ?? error,
+        error instanceof Error ? error.message : error,
       );
       setErrorMsg(
         'Result 데이터를 저장하는 중 오류가 발생했습니다.',
@@ -303,7 +291,7 @@ export default function ResultPage(): JSX.Element {
     }
   };
 
-  // ---------- 매도완료 토글 (Result에서도 변경 가능) ----------
+  // ---------- 매도완료 토글 ----------
   const handleToggleSold = async (
     row: ResultRow,
   ): Promise<void> => {
@@ -325,7 +313,6 @@ export default function ResultPage(): JSX.Element {
         .single();
 
       if (error) {
-        // eslint-disable-next-line no-console
         console.error(
           '[Result] handleToggleSold Supabase error:',
           error,
@@ -335,7 +322,6 @@ export default function ResultPage(): JSX.Element {
 
       const updated = data as StockItemFromDb;
 
-      // is_sold=false로 변경되면 Result 화면에서 제거
       setRows((prev) =>
         prev
           .map((r) =>
@@ -349,11 +335,10 @@ export default function ResultPage(): JSX.Element {
           )
           .filter((r) => r.isSold),
       );
-    } catch (error: any) {
-      // eslint-disable-next-line no-console
+    } catch (error: unknown) {
       console.error(
         '[Result] handleToggleSold JS error:',
-        error?.message ?? error,
+        error instanceof Error ? error.message : error,
       );
       setErrorMsg(
         '매도완료 상태를 변경하는 중 오류가 발생했습니다.',
@@ -445,13 +430,11 @@ export default function ResultPage(): JSX.Element {
     const buyBase = avg && qty ? avg * qty : 0;
     const totalSell = sell && qty ? sell * qty : 0;
 
-    // 1순위: 입력된 실수익(real_profit)이 있으면 그걸 사용
     const hasRealProfit = real !== 0;
     const profitAmount = hasRealProfit
       ? real
       : totalSell - buyBase - extra;
 
-    // 기타비용 표시값
     const extraToShow = hasRealProfit
       ? totalSell - buyBase - real
       : extra;
@@ -461,7 +444,6 @@ export default function ResultPage(): JSX.Element {
         ? (profitAmount / buyBase) * 100
         : undefined;
 
-    // 보유기간
     let holdingDays: number | undefined;
     if (buyDate && soldAt) {
       const buy = new Date(buyDate);
@@ -469,7 +451,7 @@ export default function ResultPage(): JSX.Element {
       const diffMs = sellD.getTime() - buy.getTime();
       const days = diffMs / (1000 * 60 * 60 * 24);
       if (!Number.isNaN(days) && days >= 0) {
-        holdingDays = Math.max(1, Math.floor(days)); // 최소 1일
+        holdingDays = Math.max(1, Math.floor(days));
       }
     }
 
@@ -581,7 +563,7 @@ export default function ResultPage(): JSX.Element {
                 key={row.id}
                 className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm text-sm sm:text-base"
               >
-                {/* 헤더: 종목 / 매도완료 / 매수·매도일 */}
+                {/* 헤더 */}
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex flex-col gap-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -593,7 +575,6 @@ export default function ResultPage(): JSX.Element {
                       </span>
                     </div>
 
-                    {/* 매수일 / 매도일 한 줄 */}
                     <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-600">
                       {row.buyDate && (
                         <span className="rounded-full bg-gray-100 px-2 py-[2px] text-[11px] sm:text-xs text-gray-700">
@@ -627,9 +608,8 @@ export default function ResultPage(): JSX.Element {
                   </div>
                 </div>
 
-                {/* 시세 / 손익 핵심 숫자 (2열 그리드, 줄 맞추기) */}
+                {/* 시세 / 손익 핵심 숫자 */}
                 <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm">
-                  {/* 현재가 / 매도가액 */}
                   <div className="flex flex-col gap-0.5">
                     <span className="text-xs text-gray-500">
                       현재가
@@ -647,7 +627,6 @@ export default function ResultPage(): JSX.Element {
                     </span>
                   </div>
 
-                  {/* 총매도액 / 매수금액(기준) */}
                   <div className="flex flex-col gap-0.5">
                     <span className="text-xs text-gray-500">
                       총매도액
@@ -669,7 +648,6 @@ export default function ResultPage(): JSX.Element {
                     </span>
                   </div>
 
-                  {/* 기타비용 / 보유기간(일) */}
                   <div className="flex flex-col gap-0.5">
                     <span className="text-xs text-gray-500">
                       기타비용
@@ -689,7 +667,6 @@ export default function ResultPage(): JSX.Element {
                     </span>
                   </div>
 
-                  {/* 수익률 / 수익금액 → 같은 줄에 나란히 */}
                   <div className="flex flex-col gap-0.5">
                     <span className="text-xs text-gray-500">
                       수익률
@@ -707,7 +684,6 @@ export default function ResultPage(): JSX.Element {
                     </span>
                   </div>
 
-                  {/* 일수익 / (비워두거나 여유 칸) */}
                   <div className="flex flex-col gap-0.5">
                     <span className="text-xs text-gray-500">
                       일수익
@@ -720,7 +696,7 @@ export default function ResultPage(): JSX.Element {
                   </div>
                 </div>
 
-                {/* 입력 영역: 매도가액 / 실제 수익금 / 매수일 */}
+                {/* 입력 영역 */}
                 <div className="rounded-lg bg-gray-50 p-3 text-xs sm:text-sm">
                   <div className="mb-2 text-xs font-semibold text-gray-600">
                     입력 / 수정

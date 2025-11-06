@@ -1,4 +1,3 @@
-// src/app/strategy/page.tsx
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
@@ -21,7 +20,7 @@ type StrategyRow = {
   highPrice?: number
   lowPrice?: number
 
-  targetPrice?: number // 수익 예상용 목표 단가
+  targetPrice?: number
 }
 
 type StockItemFromDb = {
@@ -52,7 +51,6 @@ type KisPriceApiResponse = {
 }
 
 export default function StrategyPage(): JSX.Element {
-  const [userId, setUserId] = useState<string | null>(null)
   const [rows, setRows] = useState<StrategyRow[]>([])
   const rowsRef = useRef<StrategyRow[]>([])
   useEffect(() => {
@@ -62,7 +60,7 @@ export default function StrategyPage(): JSX.Element {
   const [isInitialLoading, setIsInitialLoading] = useState(true)
   const [isMutating, setIsMutating] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [isAutoRefresh, setIsAutoRefresh] = useState(false) // 기본 OFF
+  const [isAutoRefresh, setIsAutoRefresh] = useState(false)
 
   // ---------- 초기 로딩 ----------
   useEffect(() => {
@@ -81,20 +79,16 @@ export default function StrategyPage(): JSX.Element {
         return
       }
 
-      setUserId(userData.user.id)
-
       const { data, error } = await supabase
         .from('stock_items')
         .select(
           'id, user_id, code, name, is_real_buy, avg_price, quantity, is_sold, sold_at, target_price, created_at',
         )
         .eq('user_id', userData.user.id)
-        // ✅ 매도된 종목은 Strategy에서 제외
         .eq('is_sold', false)
         .order('created_at', { ascending: true })
 
       if (error) {
-        // eslint-disable-next-line no-console
         console.error('[Strategy] 초기 로딩 에러:', error)
         setErrorMsg('전략 데이터를 불러오는 중 오류가 발생했습니다.')
         setIsInitialLoading(false)
@@ -155,11 +149,10 @@ export default function StrategyPage(): JSX.Element {
         if (result.status === 'fulfilled') {
           const value = result.value
           priceMap.set(value.code, value)
-        } else {
-          // eslint-disable-next-line no-console
+        } else if (result.status === 'rejected') {
           console.warn(
             '[Strategy] 일부 종목 시세 갱신 실패:',
-            (result as any).reason,
+            result.reason,
           )
         }
       })
@@ -178,8 +171,7 @@ export default function StrategyPage(): JSX.Element {
           }
         }),
       )
-    } catch (error) {
-      // eslint-disable-next-line no-console
+    } catch (error: unknown) {
       console.error('[Strategy] 시세 갱신 에러:', error)
       setErrorMsg('시세를 갱신하는 중 오류가 발생했습니다.')
     }
@@ -197,8 +189,6 @@ export default function StrategyPage(): JSX.Element {
         if (latest.length > 0) {
           await refreshPricesOnce(latest)
         }
-        // 2초 간격
-        // eslint-disable-next-line no-await-in-loop
         await new Promise<void>((resolve) => {
           window.setTimeout(resolve, 2000)
         })
@@ -256,8 +246,7 @@ export default function StrategyPage(): JSX.Element {
         .eq('id', id)
 
       if (error) throw error
-    } catch (error) {
-      // eslint-disable-next-line no-console
+    } catch (error: unknown) {
       console.error(
         '[Strategy] 평균단가/주수/목표단가 저장 에러:',
         error,
@@ -296,12 +285,10 @@ export default function StrategyPage(): JSX.Element {
       const updated = data as StockItemFromDb
 
       if (updated.is_sold) {
-        // ✅ 매도완료 → Strategy에서 제거
         setRows((prev) =>
           prev.filter((r) => r.id !== updated.id),
         )
       } else {
-        // (혹시라도 false로 되돌릴 일이 생길 경우 대비)
         setRows((prev) =>
           prev.map((r) =>
             r.id === updated.id
@@ -314,8 +301,7 @@ export default function StrategyPage(): JSX.Element {
           ),
         )
       }
-    } catch (error) {
-      // eslint-disable-next-line no-console
+    } catch (error: unknown) {
       console.error(
         '[Strategy] 매도완료 토글 에러:',
         error,
@@ -535,15 +521,6 @@ export default function StrategyPage(): JSX.Element {
             const sell1Price = avgPrice ? avgPrice * 1.03 : 0
             const sell2Price = avgPrice ? avgPrice * 1.05 : 0
 
-            const profit3 =
-              sell1Price && quantity
-                ? sell1Price * quantity - investment
-                : 0
-            const profit5 =
-              sell2Price && quantity
-                ? sell2Price * quantity - investment
-                : 0
-
             const {
               text: profitRateText,
               className: profitRateClass,
@@ -572,7 +549,6 @@ export default function StrategyPage(): JSX.Element {
               className: changeRateClass,
             } = formatPercent(row.changeRate)
 
-            // 수익 예상(목표 단가 기준)
             const hasTarget =
               targetPrice && !Number.isNaN(targetPrice)
             const targetEval =
@@ -604,7 +580,6 @@ export default function StrategyPage(): JSX.Element {
                 {/* 헤더 */}
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex flex-col gap-1">
-                    {/* 전략 라벨을 위로 */}
                     <div className="flex flex-wrap items-center gap-2">
                       <span
                         className={`rounded-full px-2 py-[2px] text-xs sm:text-sm ${decisionInfo.className}`}
@@ -675,7 +650,6 @@ export default function StrategyPage(): JSX.Element {
                     </div>
                   </div>
 
-                  {/* 1행: 수익률 / 수익금액 */}
                   <div className="flex flex-col gap-0.5">
                     <span className="text-xs text-gray-500">
                       수익률
@@ -693,7 +667,6 @@ export default function StrategyPage(): JSX.Element {
                     </span>
                   </div>
 
-                  {/* 2행: 투자원금 / 평가금액 */}
                   <div className="flex flex-col gap-0.5">
                     <span className="text-xs text-gray-500">
                       투자원금
@@ -716,7 +689,7 @@ export default function StrategyPage(): JSX.Element {
                   </div>
                 </div>
 
-                {/* 1) 전략 구간 */}
+                {/* 전략 구간 */}
                 <div className="flex flex-col gap-2 rounded-lg bg-gray-50 p-3 text-xs sm:text-sm">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-semibold text-gray-600">
@@ -748,13 +721,12 @@ export default function StrategyPage(): JSX.Element {
                   )}
                 </div>
 
-                {/* 2) 수익 예상 (목표단가 기준) */}
+                {/* 수익 예상 */}
                 <div className="rounded-lg bg-gray-50 p-3 text-xs sm:text-sm">
                   <div className="mb-2 text-xs font-semibold text-gray-600">
                     수익 예상
                   </div>
                   <div className="grid grid-cols-3 gap-3">
-                    {/* 목표 단가 입력 */}
                     <label className="flex flex-col gap-0.5">
                       <span className="text-xs text-gray-500">
                         목표 단가
@@ -782,7 +754,6 @@ export default function StrategyPage(): JSX.Element {
                       />
                     </label>
 
-                    {/* 수익률 (박스 형태로 맞추기) */}
                     <div className="flex flex-col gap-0.5">
                       <span className="text-xs text-gray-500">
                         수익률
@@ -796,7 +767,6 @@ export default function StrategyPage(): JSX.Element {
                       </div>
                     </div>
 
-                    {/* 수익금액 (박스 형태로 맞추기) */}
                     <div className="flex flex-col gap-0.5">
                       <span className="text-xs text-gray-500">
                         수익금액
@@ -812,7 +782,7 @@ export default function StrategyPage(): JSX.Element {
                   </div>
                 </div>
 
-                {/* 3) 매수 정보 (입력) */}
+                {/* 매수 정보 */}
                 <div className="rounded-lg bg-gray-50 p-3 text-xs sm:text-sm">
                   <div className="mb-2 text-xs font-semibold text-gray-600">
                     매수 정보

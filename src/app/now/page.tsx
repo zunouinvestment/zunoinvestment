@@ -1,4 +1,3 @@
-// src/app/now/page.tsx
 'use client';
 
 import { FormEvent, useEffect, useRef, useState } from 'react';
@@ -10,10 +9,10 @@ type NowRow = {
   name: string;
   isRealBuy: boolean;
   isSold: boolean;
-  buyDate?: string | null; // 매수일
+  buyDate?: string | null;
 
   currentPrice?: number | string;
-  changeRate?: number | string; // 등락률 (%)
+  changeRate?: number | string;
 };
 
 type StockItemFromDb = {
@@ -73,7 +72,7 @@ export default function NowPage(): JSX.Element {
   const [isAutoRefresh, setIsAutoRefresh] =
     useState<boolean>(false);
 
-  // 검색 팝업 상태 (종목명 검색)
+  // 검색 팝업 상태
   const [isSearchOpen, setIsSearchOpen] =
     useState<boolean>(false);
   const [searchKeyword, setSearchKeyword] =
@@ -107,11 +106,10 @@ export default function NowPage(): JSX.Element {
         .from('stock_items')
         .select('*')
         .eq('user_id', userData.user.id)
-        .eq('is_sold', false) // 현재 활성 포지션만 Now에 표시
+        .eq('is_sold', false)
         .order('created_at', { ascending: true });
 
       if (error) {
-        // eslint-disable-next-line no-console
         console.error(error);
         setErrorMsg('종목 목록을 불러오는 중 오류가 발생했습니다.');
         setIsInitialLoading(false);
@@ -132,7 +130,6 @@ export default function NowPage(): JSX.Element {
       setRows(mapped);
       setIsInitialLoading(false);
 
-      // 처음 로딩 후 한 번 강제 갱신
       if (mapped.length > 0) {
         void refreshPricesOnce(mapped);
       }
@@ -141,7 +138,7 @@ export default function NowPage(): JSX.Element {
     void load();
   }, []);
 
-  // ---------- 공통: 한 번 가격 갱신하는 함수 ----------
+  // ---------- 한 번 가격 갱신 ----------
   const refreshPricesOnce = async (
     targetRows?: NowRow[],
   ): Promise<void> => {
@@ -173,11 +170,10 @@ export default function NowPage(): JSX.Element {
         if (result.status === 'fulfilled') {
           const value = result.value;
           priceMap.set(value.code, value);
-        } else {
-          // eslint-disable-next-line no-console
+        } else if (result.status === 'rejected') {
           console.error(
             '시세 갱신 실패:',
-            (result as any).reason,
+            result.reason,
           );
         }
       });
@@ -194,8 +190,7 @@ export default function NowPage(): JSX.Element {
           };
         }),
       );
-    } catch (error) {
-      // eslint-disable-next-line no-console
+    } catch (error: unknown) {
       console.error(error);
       setErrorMsg(
         '시세를 갱신하는 중 오류가 발생했습니다.',
@@ -219,8 +214,6 @@ export default function NowPage(): JSX.Element {
           await refreshPricesOnce(latestRows);
         }
 
-        // 2초 간격
-        // eslint-disable-next-line no-await-in-loop
         await new Promise<void>((resolve) => {
           window.setTimeout(resolve, 2000);
         });
@@ -248,11 +241,10 @@ export default function NowPage(): JSX.Element {
 
     const newIsRealBuy = !row.isRealBuy;
 
-    // 새로 실매수로 체크되고 기존 매수일이 없으면 → 오늘 날짜 기본값
     let newBuyDate = row.buyDate ?? null;
     if (newIsRealBuy && !newBuyDate) {
       const today = new Date();
-      newBuyDate = today.toISOString().slice(0, 10); // YYYY-MM-DD
+      newBuyDate = today.toISOString().slice(0, 10);
     }
 
     try {
@@ -283,8 +275,7 @@ export default function NowPage(): JSX.Element {
             : r,
         ),
       );
-    } catch (error) {
-      // eslint-disable-next-line no-console
+    } catch (error: unknown) {
       console.error(error);
       setErrorMsg(
         '실매수 여부 변경 중 오류가 발생했습니다.',
@@ -330,8 +321,7 @@ export default function NowPage(): JSX.Element {
             : r,
         ),
       );
-    } catch (error) {
-      // eslint-disable-next-line no-console
+    } catch (error: unknown) {
       console.error(error);
       setErrorMsg(
         '매수일을 저장하는 중 오류가 발생했습니다.',
@@ -347,7 +337,6 @@ export default function NowPage(): JSX.Element {
   ): Promise<void> => {
     setErrorMsg(null);
 
-    // eslint-disable-next-line no-alert
     const ok = window.confirm(
       `${row.name} (${row.code}) 종목을 삭제하시겠습니까?`,
     );
@@ -366,8 +355,7 @@ export default function NowPage(): JSX.Element {
       }
 
       setRows((prev) => prev.filter((r) => r.id !== row.id));
-    } catch (error) {
-      // eslint-disable-next-line no-console
+    } catch (error: unknown) {
       console.error(error);
       setErrorMsg('종목 삭제 중 오류가 발생했습니다.');
     } finally {
@@ -376,7 +364,6 @@ export default function NowPage(): JSX.Element {
   };
 
   // ---------- 이름 검색 팝업 관련 ----------
-
   const handleSearchSubmit = async (
     e: FormEvent<HTMLFormElement>,
   ): Promise<void> => {
@@ -410,8 +397,7 @@ export default function NowPage(): JSX.Element {
       }
 
       setSearchResults(data.items ?? []);
-    } catch (error) {
-      // eslint-disable-next-line no-console
+    } catch (error: unknown) {
       console.error(error);
       setSearchError('종목명 검색 중 오류가 발생했습니다.');
     } finally {
@@ -427,7 +413,6 @@ export default function NowPage(): JSX.Element {
       return;
     }
 
-    // 현재 Now에 표시 중인(= is_sold=false) 종목 중에서만 중복 체크
     const exists = rowsRef.current.some(
       (r) => r.code === item.code,
     );
@@ -457,8 +442,8 @@ export default function NowPage(): JSX.Element {
         .single();
 
       if (error) {
-        const err: any = error;
-        if (err.code === '23505') {
+        const pgError = error as { code?: string };
+        if (pgError.code === '23505') {
           setSearchError(
             '이미 보유(또는 등록) 중인 종목입니다.',
           );
@@ -480,14 +465,12 @@ export default function NowPage(): JSX.Element {
 
       setRows((prev) => [...prev, newRow]);
 
-      // 새로 추가된 종목까지 포함해 바로 한 번 시세 조회
       void refreshPricesOnce([...rowsRef.current, newRow]);
 
       setSearchKeyword('');
       setSearchResults([]);
       setIsSearchOpen(false);
-    } catch (error) {
-      // eslint-disable-next-line no-console
+    } catch (error: unknown) {
       console.error(error);
       if (!searchError) {
         setSearchError('종목을 추가하는 중 오류가 발생했습니다.');
@@ -636,7 +619,6 @@ export default function NowPage(): JSX.Element {
   };
 
   // ---------- 렌더링 ----------
-
   return (
     <div className="flex flex-col gap-4 p-3 sm:p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -707,7 +689,7 @@ export default function NowPage(): JSX.Element {
         </div>
       ) : (
         <>
-          {/* ✅ 데스크탑/태블릿: 테이블 뷰 */}
+          {/* 데스크탑/태블릿: 테이블 뷰 */}
           <div className="hidden sm:block">
             <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
               <table className="min-w-full text-left text-xs md:text-sm">
@@ -805,7 +787,7 @@ export default function NowPage(): JSX.Element {
             </div>
           </div>
 
-          {/* ✅ 모바일: 카드 리스트 뷰 */}
+          {/* 모바일: 카드 리스트 뷰 */}
           <div className="space-y-2 sm:hidden">
             {rows.map((row) => {
               const { text, className } =
@@ -816,7 +798,6 @@ export default function NowPage(): JSX.Element {
                   key={row.id}
                   className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm text-[12px]"
                 >
-                  {/* 상단: 종목명 + 코드 */}
                   <div className="flex items-start justify-between">
                     <div>
                       <div className="flex items-center gap-2">
@@ -841,7 +822,6 @@ export default function NowPage(): JSX.Element {
                     </button>
                   </div>
 
-                  {/* 현재가 / 등락률 */}
                   <div className="mt-2 flex flex-wrap items-baseline gap-2">
                     <span className="text-[11px] text-gray-500">
                       현재가
@@ -856,7 +836,6 @@ export default function NowPage(): JSX.Element {
                     </span>
                   </div>
 
-                  {/* 매수일 / 실매수 */}
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex flex-col gap-1">
                       <span className="text-[11px] text-gray-500">
@@ -875,7 +854,7 @@ export default function NowPage(): JSX.Element {
                         }}
                       />
                     </div>
-                    <label className="inline-flex items-center gap-1 text-[12px] text-gray-700 whitespace-nowrap">
+                    <label className="inline-flex items-center gap-1 whitespace-nowrap text-[12px] text-gray-700">
                       <input
                         type="checkbox"
                         className="h-4 w-4"

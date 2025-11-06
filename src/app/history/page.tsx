@@ -1,7 +1,6 @@
-// src/app/history/page.tsx
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
 type HistorySourceRow = {
@@ -33,7 +32,6 @@ type DetailRow = {
 export default function HistoryPage(): JSX.Element {
   const [userId, setUserId] = useState<string | null>(null);
 
-  // ✅ 현재 연도 전체로 기본 세팅
   const currentYear = new Date().getFullYear();
   const [startDate, setStartDate] = useState<string>(
     `${currentYear}-01-01`,
@@ -65,9 +63,6 @@ export default function HistoryPage(): JSX.Element {
 
     void loadUser();
   }, []);
-
-  // (이하 동일 — 나머지 로직은 그대로 유지)
-
 
   // ---------- 수익 계산 유틸 ----------
   const calcProfitForRow = (row: HistorySourceRow): number => {
@@ -102,7 +97,6 @@ export default function HistoryPage(): JSX.Element {
     setErrorMsg(null);
 
     try {
-      // sold_at 기준 기간 필터
       const from = `${startDate}T00:00:00`;
       const to = `${endDate}T23:59:59`;
 
@@ -118,7 +112,6 @@ export default function HistoryPage(): JSX.Element {
         .order('sold_at', { ascending: true });
 
       if (error) {
-        // eslint-disable-next-line no-console
         console.error('[History] Supabase error:', error);
         throw error;
       }
@@ -194,11 +187,10 @@ export default function HistoryPage(): JSX.Element {
       setMonthly(monthlyArr);
       setDetails(detailArr);
       setTotalProfit(total);
-    } catch (error: any) {
-      // eslint-disable-next-line no-console
+    } catch (error: unknown) {
       console.error(
         '[History] JS error:',
-        error?.message ?? error,
+        error instanceof Error ? error.message : error,
       );
       setErrorMsg(
         'History 데이터를 불러오는 중 오류가 발생했습니다.',
@@ -218,14 +210,6 @@ export default function HistoryPage(): JSX.Element {
   }, [userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------- 포맷터 ----------
-  const formatNumber = (
-    value: number | undefined,
-  ): string => {
-    if (value === null || value === undefined) return '-';
-    if (Number.isNaN(value)) return '-';
-    return value.toLocaleString();
-  };
-
   const formatProfit = (
     value: number,
   ): { text: string; className: string } => {
@@ -241,7 +225,7 @@ export default function HistoryPage(): JSX.Element {
   };
 
   const handleSubmit = async (
-    e: React.FormEvent<HTMLFormElement>,
+    e: FormEvent<HTMLFormElement>,
   ): Promise<void> => {
     e.preventDefault();
     await loadHistory();
@@ -293,7 +277,7 @@ export default function HistoryPage(): JSX.Element {
             />
           </div>
 
-          <label className="flex items-center gap-2 text-xs sm:text-sm text-gray-700 mt-2">
+          <label className="mt-2 flex items-center gap-2 text-xs sm:text-sm text-gray-700">
             <input
               type="checkbox"
               className="h-4 w-4"
@@ -337,7 +321,7 @@ export default function HistoryPage(): JSX.Element {
         </div>
       )}
 
-      {/* 로딩 / 데이터 없음 */}
+      {/* 로딩 / 데이터 없음 / 결과 */}
       {isLoading ? (
         <div className="rounded-md border border-gray-200 bg-white px-3 py-4 text-center text-sm sm:text-base text-gray-500 shadow-sm">
           History 데이터를 불러오는 중입니다...
