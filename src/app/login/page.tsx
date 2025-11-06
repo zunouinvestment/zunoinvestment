@@ -121,7 +121,7 @@ export default function LoginPage() {
 
         {/* 힌트 표시 */}
         <p className="mt-3 text-center text-xs text-gray-500">
-          등록된 아이디 뒤에는 자동으로 <strong>@z.com</strong>이 붙습니다.
+          Money is coined liberty. by zuno 2025
         </p>
       </div>
     </div>
