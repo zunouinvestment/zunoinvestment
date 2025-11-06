@@ -12,8 +12,13 @@ import { Home, FileText, BarChart3, Newspaper, Settings, Calendar, FileSpreadshe
 
 type NavItem = { name: string; href: string; icon: React.ReactNode }
 
+// ✅ 여기서 메뉴만 추가해주면 됨
 const navItems: NavItem[] = [
-  { name: 'Home',           href: '/',               icon: <Home className="w-4 h-4" /> }
+  { name: 'Home',     href: '/',         icon: <Home className="w-4 h-4" /> },
+  { name: 'Now',      href: '/now',      icon: <BarChart3 className="w-4 h-4" /> },
+  { name: 'Strategy', href: '/strategy', icon: <FileSpreadsheet className="w-4 h-4" /> },
+  { name: 'Result',   href: '/result',   icon: <FileText className="w-4 h-4" /> },
+  { name: 'History',  href: '/history',  icon: <Calendar className="w-4 h-4" /> },
 ]
 
 export default function LayoutWrapper({ children }: { children: ReactNode }) {
@@ -95,7 +100,7 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
     return ''
   }, [displayName, email, loadingProfile])
 
-  // ✅ 활성 경로 매핑 (항상 훅을 동일 순서로 호출하기 위해 조기 return "위"에 위치)
+  // ✅ 활성 경로 매핑
   const activeMap = useMemo(() => {
     const map: Record<string, boolean> = {}
     navItems.forEach((it) => {
