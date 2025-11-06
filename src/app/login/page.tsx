@@ -7,7 +7,7 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('')
+  const [userId, setUserId] = useState('') // 이메일 대신 id 입력
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -16,14 +16,21 @@ export default function LoginPage() {
     e.preventDefault()
     setErrorMsg(null)
 
-    if (!email || !password) {
-      setErrorMsg('이메일과 비밀번호를 입력하세요.')
+    if (!userId || !password) {
+      setErrorMsg('아이디와 비밀번호를 입력하세요.')
       return
     }
 
+    // ✅ 입력된 아이디에 @z.com 자동 부착
+    const email = userId.includes('@') ? userId : `${userId}@z.com`
+
     setLoading(true)
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+
       if (error) {
         setErrorMsg(error.message)
         return
@@ -35,6 +42,7 @@ export default function LoginPage() {
         return
       }
 
+      // 서버 세션 저장 (선택적)
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -63,10 +71,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
       <div className="w-full max-w-sm bg-white p-14 rounded-xl shadow-md">
-        {/* ✅ 샤우팅 폰트 적용 */}
-        <h1
-          className="text-4xl font-bold text-center mb-6 font-shouting text-gray-900 tracking-wide"
-        >
+        <h1 className="text-4xl font-bold text-center mb-6 font-shouting text-gray-900 tracking-wide">
           Buy low Sell high.
         </h1>
 
@@ -78,15 +83,15 @@ export default function LoginPage() {
 
         <form onSubmit={handleLogin} className="space-y-5">
           <div>
-            <label className="sr-only" htmlFor="email">이메일</label>
+            <label className="sr-only" htmlFor="userId">아이디</label>
             <input
-              id="email"
-              type="email"
-              placeholder="아이디 (이메일)"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              id="userId"
+              type="text"
+              placeholder="아이디"
+              value={userId}
+              onChange={(e) => setUserId(e.target.value.trim())}
               className="w-full border-b border-gray-400 py-2 focus:outline-none"
-              autoComplete="email"
+              autoComplete="username"
               required
             />
           </div>
@@ -113,6 +118,11 @@ export default function LoginPage() {
             {loading ? '로그인 중…' : 'Login'}
           </button>
         </form>
+
+        {/* 힌트 표시 */}
+        <p className="mt-3 text-center text-xs text-gray-500">
+          등록된 아이디 뒤에는 자동으로 <strong>@z.com</strong>이 붙습니다.
+        </p>
       </div>
     </div>
   )
