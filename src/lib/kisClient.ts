@@ -67,8 +67,8 @@ let memoryToken: { value: string; expiresAtMs: number } | null =
 
 // DB 토큰 관리용 상수
 const TOKEN_PROVIDER = 'KIS';
-// 실제 만료(24h)보다 조금 짧게 23시간만 쓰도록 버퍼
-const TOKEN_LIFETIME_MS = 23 * 60 * 60 * 1000;
+// KIS 최대 24시간 유효이지만, 안정적으로 12시간마다 재발급
+const TOKEN_LIFETIME_MS = 12 * 60 * 60 * 1000;
 
 // ---------- DB에서 토큰 불러오기 ----------
 async function loadTokenFromDb(): Promise<{
@@ -96,8 +96,7 @@ async function loadTokenFromDb(): Promise<{
 
   const now = Date.now();
   if (expiresAtMs <= now) {
-    // 이미 만료된 토큰이면 무시
-    return null;
+    return null; // 이미 만료된 토큰이면 무시
   }
 
   return { token: row.access_token, expiresAtMs };
@@ -138,7 +137,6 @@ async function issueNewToken(): Promise<{
   const res = await fetch(`${BASE_URL}/oauth2/tokenP`, {
     method: 'POST',
     headers: {
-      // 기존에 잘 쓰던 JSON 포맷 그대로 유지
       'Content-Type': 'application/json; charset=utf-8',
     },
     body: JSON.stringify({
@@ -164,8 +162,6 @@ async function issueNewToken(): Promise<{
   }
 
   console.log('[KIS] 새로운 access_token 발급 완료');
-
-  // DB에 저장하면서 만료 시간 계산
   return saveTokenToDb(data.access_token);
 }
 
@@ -173,12 +169,10 @@ async function issueNewToken(): Promise<{
 export async function getKisAccessToken(): Promise<string> {
   const now = Date.now();
 
-  // 1) 메모리 캐시에 유효한 토큰이 있으면 바로 사용
   if (memoryToken && memoryToken.expiresAtMs > now) {
     return memoryToken.value;
   }
 
-  // 2) DB에서 최신 유효 토큰을 읽어오기
   const dbToken = await loadTokenFromDb();
   if (dbToken && dbToken.expiresAtMs > now) {
     memoryToken = {
@@ -188,7 +182,6 @@ export async function getKisAccessToken(): Promise<string> {
     return dbToken.token;
   }
 
-  // 3) DB에도 유효한 토큰이 없다 → 새로 발급
   const newToken = await issueNewToken();
   memoryToken = {
     value: newToken.token,
@@ -197,11 +190,7 @@ export async function getKisAccessToken(): Promise<string> {
   return newToken.token;
 }
 
-/**
- * 종목코드를 KIS에서 요구하는 6자리 숫자형으로 정리
- * - "28050" -> "028050"
- * - "005930"은 그대로
- */
+/** 종목코드를 KIS에서 요구하는 6자리 숫자형으로 정리 */
 function normalizeStockCode(rawCode: string): string {
   const onlyDigits = rawCode.replace(/[^0-9]/g, '');
   if (!onlyDigits) {
@@ -210,24 +199,31 @@ function normalizeStockCode(rawCode: string): string {
   return onlyDigits.slice(-6).padStart(6, '0');
 }
 
-/**
- * 국내주식 현재가 시세 조회
- * - API: /uapi/domestic-stock/v1/quotations/inquire-price
- * - TR_ID: FHKST01010100
- */
-export async function getDomesticStockPrice(
-  rawCode: string,
+// ---------- 만료 감지 함수 ----------
+function isTokenExpiredMessage(text: string): boolean {
+  if (!text) return false;
+  return (
+    text.includes('기간이 만료된 token') ||
+    text.includes('EGW00123')
+  );
+}
+
+function isTokenExpiredBizError(data: KisPriceApiResponse): boolean {
+  return (
+    data.msg_cd === 'EGW00123' ||
+    data.msg1?.includes('기간이 만료된 token') === true
+  );
+}
+
+// ---------- API 요청 ----------
+async function requestDomesticPriceWithToken(
+  code: string,
+  token: string,
+  allowRetryOnExpire: boolean,
 ): Promise<KisPriceResult> {
-  if (!APP_KEY || !APP_SECRET) {
-    throw new Error('[KIS] AppKey/AppSecret 환경변수가 없습니다.');
-  }
-
-  const code = normalizeStockCode(rawCode);
-  const token = await getKisAccessToken();
-
   const params = new URLSearchParams({
-    FID_COND_MRKT_DIV_CODE: 'UN', // 통합 (KRX + NXT)
-    FID_INPUT_ISCD: code, // 6자리 종목코드
+    FID_COND_MRKT_DIV_CODE: 'UN',
+    FID_INPUT_ISCD: code,
   });
 
   const url = `${BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-price?${params.toString()}`;
@@ -237,38 +233,58 @@ export async function getDomesticStockPrice(
     headers: {
       'content-type': 'application/json; charset=utf-8',
       authorization: `Bearer ${token}`,
-      appkey: APP_KEY,
-      appsecret: APP_SECRET,
+      appkey: APP_KEY ?? '',
+      appsecret: APP_SECRET ?? '',
       tr_id: 'FHKST01010100',
       custtype: 'P',
     },
     cache: 'no-store',
   });
 
+  const rawText = await res.text();
+
   if (!res.ok) {
-    const text = await res.text();
-    console.error(
-      '[KIS] inquire-price HTTP error:',
-      res.status,
-      text,
-    );
+    if (allowRetryOnExpire && isTokenExpiredMessage(rawText)) {
+      console.warn(
+        '[KIS] access_token 만료 감지(HTTP). 재발급 후 재시도.',
+      );
+      const newToken = await issueNewToken();
+      memoryToken = {
+        value: newToken.token,
+        expiresAtMs: newToken.expiresAtMs,
+      };
+      return requestDomesticPriceWithToken(code, newToken.token, false);
+    }
+
+    console.error('[KIS] inquire-price HTTP error:', res.status, rawText);
     throw new Error(
-      `[KIS] 현재가 조회 HTTP 에러: ${res.status} ${text}`,
+      `[KIS] 현재가 조회 HTTP 에러: ${res.status} ${rawText}`,
     );
   }
 
-  const data = (await res.json()) as KisPriceApiResponse;
+  let data: KisPriceApiResponse;
+  try {
+    data = JSON.parse(rawText) as KisPriceApiResponse;
+  } catch (error) {
+    console.error('[KIS] inquire-price JSON parse error:', error, rawText);
+    throw new Error('[KIS] 현재가 조회 응답 파싱 실패');
+  }
 
   if (data.rt_cd !== '0') {
-    console.error(
-      '[KIS] inquire-price biz error:',
-      data.msg_cd,
-      data.msg1,
-    );
-    throw new Error(
-      data.msg1 ||
-        `[KIS] 현재가 조회 실패 (rt_cd=${data.rt_cd})`,
-    );
+    if (allowRetryOnExpire && isTokenExpiredBizError(data)) {
+      console.warn(
+        '[KIS] access_token 만료 감지(BIZ). 재발급 후 재시도.',
+      );
+      const newToken = await issueNewToken();
+      memoryToken = {
+        value: newToken.token,
+        expiresAtMs: newToken.expiresAtMs,
+      };
+      return requestDomesticPriceWithToken(code, newToken.token, false);
+    }
+
+    console.error('[KIS] inquire-price biz error:', data.msg_cd, data.msg1);
+    throw new Error(data.msg1 || `[KIS] 현재가 조회 실패 (rt_cd=${data.rt_cd})`);
   }
 
   const o = data.output ?? {};
@@ -280,9 +296,7 @@ export async function getDomesticStockPrice(
   const volume = Number(o.acml_vol ?? 0);
   const changeRate = Number(o.prdy_ctrt ?? 0);
   const changePrice =
-    o.prdy_vrss !== undefined
-      ? Number(o.prdy_vrss)
-      : undefined;
+    o.prdy_vrss !== undefined ? Number(o.prdy_vrss) : undefined;
 
   return {
     code: o.stck_shrn_iscd ?? code,
@@ -295,4 +309,19 @@ export async function getDomesticStockPrice(
     changeRate,
     changePrice,
   };
+}
+
+// ---------- 공개 함수 ----------
+export async function getDomesticStockPrice(
+  rawCode: string,
+): Promise<KisPriceResult> {
+  if (!APP_KEY || !APP_SECRET) {
+    throw new Error('[KIS] AppKey/AppSecret 환경변수가 없습니다.');
+  }
+
+  const code = normalizeStockCode(rawCode);
+  const token = await getKisAccessToken();
+
+  // 만료 시 한 번만 자동 재시도
+  return requestDomesticPriceWithToken(code, token, true);
 }
