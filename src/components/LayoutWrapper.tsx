@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabaseClient'
 import LogoutButton from '@/components/LogoutButton'
 
 // lucide-react 아이콘
-import { Home, FileText, BarChart3, Newspaper, Settings, Calendar, FileSpreadsheet } from 'lucide-react'
+import { Home, FileText, BarChart3, Newspaper, Calendar, FileSpreadsheet } from 'lucide-react'
 
 type NavItem = { name: string; href: string; icon: React.ReactNode }
 
@@ -19,6 +19,7 @@ const navItems: NavItem[] = [
   { name: 'Strategy', href: '/strategy', icon: <FileSpreadsheet className="w-4 h-4" /> },
   { name: 'Result',   href: '/result',   icon: <FileText className="w-4 h-4" /> },
   { name: 'History',  href: '/history',  icon: <Calendar className="w-4 h-4" /> },
+  { name: 'News',     href: '/news',     icon: <Newspaper className="w-4 h-4" /> }, // 🆕 추가
 ]
 
 export default function LayoutWrapper({ children }: { children: ReactNode }) {
@@ -58,12 +59,14 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    loadProfile()
+    void loadProfile()
   }, [])
 
   // 프로필 변경 브로드캐스트 수신 → 즉시 반영
   useEffect(() => {
-    const handler = () => loadProfile()
+    const handler = () => {
+      void loadProfile()
+    }
     window.addEventListener('profile-updated', handler as EventListener)
     return () => window.removeEventListener('profile-updated', handler as EventListener)
   }, [])
