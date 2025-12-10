@@ -24,7 +24,7 @@
     "googleapis": "^156.0.0",
     "iconv-lite": "^0.7.0",
     "lucide-react": "^0.539.0",
-    "next": "15.4.6",
+    "next": "^16.0.8",
     "puppeteer-core": "^24.22.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",
