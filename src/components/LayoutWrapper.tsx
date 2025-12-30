@@ -8,18 +8,45 @@ import { supabase } from '@/lib/supabaseClient'
 import LogoutButton from '@/components/LogoutButton'
 
 // lucide-react 아이콘
-import { Home, FileText, BarChart3, Newspaper, Calendar, FileSpreadsheet } from 'lucide-react'
+import {
+  Home,
+  FileText,
+  BarChart3,
+  Newspaper,
+  Calendar,
+  FileSpreadsheet,
+  Wallet,
+  PieChart, // ✅ 차트 아이콘 추가
+} from 'lucide-react'
 
 type NavItem = { name: string; href: string; icon: React.ReactNode }
+type NavCategory = { title?: string; items: NavItem[] }
 
-// ✅ 여기서 메뉴만 추가해주면 됨
-const navItems: NavItem[] = [
-  { name: 'Home',     href: '/',         icon: <Home className="w-4 h-4" /> },
-  { name: 'Now',      href: '/now',      icon: <BarChart3 className="w-4 h-4" /> },
-  { name: 'Strategy', href: '/strategy', icon: <FileSpreadsheet className="w-4 h-4" /> },
-  { name: 'Result',   href: '/result',   icon: <FileText className="w-4 h-4" /> },
-  { name: 'History',  href: '/history',  icon: <Calendar className="w-4 h-4" /> },
-  { name: 'News',     href: '/news',     icon: <Newspaper className="w-4 h-4" /> }, // 🆕 추가
+// ✅ 메뉴 구조 업데이트
+const navMenu: NavCategory[] = [
+  {
+    items: [
+      { name: 'Home', href: '/', icon: <Home className="w-4 h-4" /> },
+    ],
+  },
+  {
+    title: 'Investment',
+    items: [
+      { name: 'Now', href: '/now', icon: <BarChart3 className="w-4 h-4" /> },
+      { name: 'Strategy', href: '/strategy', icon: <FileSpreadsheet className="w-4 h-4" /> },
+      { name: 'Result', href: '/result', icon: <FileText className="w-4 h-4" /> },
+      { name: 'History', href: '/history', icon: <Calendar className="w-4 h-4" /> },
+      { name: 'News', href: '/news', icon: <Newspaper className="w-4 h-4" /> },
+    ],
+  },
+  {
+    title: 'Asset Management',
+    items: [
+      { name: 'Expense Tracker', href: '/expense-tracker', icon: <Wallet className="w-4 h-4" /> },
+      // ✅ 리포트 메뉴 추가
+      { name: 'Expense Report', href: '/expense-report', icon: <PieChart className="w-4 h-4" /> },
+    ],
+  },
 ]
 
 export default function LayoutWrapper({ children }: { children: ReactNode }) {
@@ -59,14 +86,12 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    void loadProfile()
+    loadProfile()
   }, [])
 
-  // 프로필 변경 브로드캐스트 수신 → 즉시 반영
+  // 프로필 변경 브로드캐스트 수신
   useEffect(() => {
-    const handler = () => {
-      void loadProfile()
-    }
+    const handler = () => loadProfile()
     window.addEventListener('profile-updated', handler as EventListener)
     return () => window.removeEventListener('profile-updated', handler as EventListener)
   }, [])
@@ -106,15 +131,16 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
   // ✅ 활성 경로 매핑
   const activeMap = useMemo(() => {
     const map: Record<string, boolean> = {}
-    navItems.forEach((it) => {
-      map[it.href] =
-        pathname === it.href ||
-        (it.href !== '/' && pathname.startsWith(it.href + '/'))
+    navMenu.forEach((category) => {
+      category.items.forEach((it) => {
+        map[it.href] =
+          pathname === it.href ||
+          (it.href !== '/' && pathname.startsWith(it.href + '/'))
+      })
     })
     return map
   }, [pathname])
 
-  // 로그인 페이지만 중앙 정렬
   if (isLoginPage) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -123,28 +149,70 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
     )
   }
 
+  // ✅ 메뉴 렌더링 헬퍼
+  const renderNavItems = () => (
+    <>
+      {navMenu.map((category, idx) => (
+        <div key={idx} className="mb-2">
+          {idx > 0 && (
+            <div className="pt-2 pb-2">
+              <div className="h-px bg-gray-100 mx-1 mb-3" />
+              {category.title && (
+                <div className="px-3 mb-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
+                  {category.title}
+                </div>
+              )}
+            </div>
+          )}
+          
+          <ul className="space-y-1">
+            {category.items.map((it) => {
+              const active = !!activeMap[it.href]
+              return (
+                <li key={it.href}>
+                  <Link
+                    href={it.href}
+                    onClick={() => setMenuOpen(false)}
+                    aria-current={active ? 'page' : undefined}
+                    className={[
+                      'group flex items-center gap-2 rounded-lg px-3 py-2 text-sm border transition-all',
+                      active
+                        ? 'bg-gray-100 border-gray-300 text-black'
+                        : 'bg-white border-transparent text-gray-700 hover:bg-gray-50 hover:border-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300',
+                    ].join(' ')}
+                  >
+                    {it.icon}
+                    <span className="font-medium">{it.name}</span>
+                    <span
+                      className={[
+                        'ml-auto h-4 w-1 rounded-full',
+                        active ? 'bg-black' : 'bg-transparent group-hover:bg-gray-300',
+                      ].join(' ')}
+                    />
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      ))}
+    </>
+  )
+
   return (
     <>
       {/* 🔒 고정 헤더 */}
       <header className="fixed top-0 left-0 right-0 h-16 bg-white shadow-md border-b z-50">
         <div className="h-full px-4 md:px-6 flex items-center justify-between gap-3">
-          {/* 좌측: 타이틀 */}
           <h1 className="font-bold font-shouting truncate text-[clamp(21px,3.5vw,25px)]">
             Buy low Sell high
           </h1>
-
-          {/* 우측: 환영문구(데스크탑) + 로그아웃 + 햄버거 */}
           <div className="flex items-center gap-2 md:gap-3">
-            {/* 데스크탑 환영 배지 */}
             <div className="hidden md:flex items-center">
               {loadingProfile ? (
-                <div
-                  aria-hidden="true"
-                  className="h-9 w-48 rounded-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-pulse"
-                />
+                <div aria-hidden="true" className="h-9 w-48 rounded-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 animate-pulse" />
               ) : welcomeText ? (
                 <div className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-full border bg-white shadow-sm">
-                  {/* 아바타(이니셜) */}
                   <div
                     aria-hidden="true"
                     className="flex h-7 w-7 items-center justify-center rounded-full border bg-gradient-to-br from-gray-50 to-gray-100 text-xs font-semibold text-gray-700"
@@ -152,7 +220,6 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
                   >
                     {initials || 'U'}
                   </div>
-                  {/* 환영 텍스트 */}
                   <span className="text-[13px] font-medium text-gray-700">
                     <Link
                       href="/account"
@@ -166,11 +233,7 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
                 </div>
               ) : null}
             </div>
-
-            {/* 로그아웃 */}
             <LogoutButton />
-
-            {/* 햄버거 (모바일 전용) */}
             <button
               type="button"
               aria-label="메뉴 열기"
@@ -187,54 +250,20 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
 
       {/* 헤더 높이만큼 여백 */}
       <div className="pt-16 flex min-h-screen">
-        {/* 좌측 사이드바 — 데스크탑 */}
         <aside className="hidden md:flex w-64 border-r bg-white flex-col">
-          <nav className="px-3 py-4 flex-1">
-            <ul className="space-y-1">
-              {navItems.map((it) => {
-                const active = !!activeMap[it.href]
-                return (
-                  <li key={it.href}>
-                    <Link
-                      href={it.href}
-                      aria-current={active ? 'page' : undefined}
-                      className={[
-                        'group flex items-center gap-2 rounded-lg px-3 py-2 text-sm border transition-all',
-                        active
-                          ? 'bg-gray-100 border-gray-300 text-black'
-                          : 'bg-white border-transparent text-gray-700 hover:bg-gray-50 hover:border-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300',
-                      ].join(' ')}
-                    >
-                      {it.icon}
-                      <span className="font-medium">{it.name}</span>
-
-                      {/* 활성 표시 바 */}
-                      <span
-                        className={[
-                          'ml-auto h-4 w-1 rounded-full',
-                          active ? 'bg-black' : 'bg-transparent group-hover:bg-gray-300',
-                        ].join(' ')}
-                      />
-                    </Link>
-                  </li>
-                )
-              })}
-            </ul>
+          <nav className="px-3 py-4 flex-1 overflow-y-auto">
+            {renderNavItems()}
           </nav>
-
-          {/* 하단 푸터 */}
           <div className="border-t px-4 py-3 text-[11px] text-gray-400">
             2025 by zuno
           </div>
         </aside>
 
-        {/* 본문 */}
         <main className="flex-1 overflow-y-auto p-4 md:p-8">
           <div className="mx-auto w-full max-w-7xl">{children}</div>
         </main>
       </div>
 
-      {/* 모바일: 오버레이 */}
       {menuOpen && (
         <button
           aria-label="메뉴 닫기"
@@ -243,43 +272,16 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
         />
       )}
 
-      {/* 모바일: 우측 슬라이드 메뉴 + 하단 푸터 */}
       <aside
         className={[
-          'fixed top-16 right-0 h-[calc(100vh-64px)] w-64 bg-white border-l shadow-xl md:hidden z-50',
+          'fixed top-16 right-0 h-[calc(100vh-64px)] w-64 bg-white border-l shadow-xl md:hidden z-50 overflow-y-auto',
           'transition-transform duration-300',
           menuOpen ? 'translate-x-0' : 'translate-x-full',
         ].join(' ')}
       >
-        <nav className="flex flex-col gap-2 font-semibold p-4 flex-1">
-          {navItems.map((it) => {
-            const active = !!activeMap[it.href]
-            return (
-              <Link
-                key={it.href}
-                href={it.href}
-                onClick={() => setMenuOpen(false)}
-                aria-current={active ? 'page' : undefined}
-                className={[
-                  'group flex items-center gap-2 rounded-lg px-3 py-2 text-sm border transition-all',
-                  active
-                    ? 'bg-gray-100 border-gray-300 text-black'
-                    : 'bg-white border-transparent text-gray-700 hover:bg-gray-50 hover:border-gray-200',
-                ].join(' ')}
-              >
-                {it.icon}
-                <span>{it.name}</span>
-                <span
-                  className={[
-                    'ml-auto h-4 w-1 rounded-full',
-                    active ? 'bg-black' : 'bg-transparent group-hover:bg-gray-300',
-                  ].join(' ')}
-                />
-              </Link>
-            )
-          })}
+        <nav className="flex flex-col p-4 flex-1">
+          {renderNavItems()}
         </nav>
-
         <div className="border-t px-4 py-3 text-[11px] text-gray-400">
           2025 by zuno
         </div>
