@@ -1,8 +1,12 @@
 // src/app/api/expenses/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabaseClient'
+import { supabase as supabaseClient } from '@/lib/supabaseClient'
+import { supabaseAdmin } from '@/lib/supabaseAdmin'
 
-// 날짜 포맷터 헬퍼 (YYYY-MM-DD)
+// DB 작업용 클라이언트 (Admin 권한 우선 사용)
+const supabase = supabaseAdmin || supabaseClient
+
+// 날짜 포맷터 (YYYY-MM-DD)
 function formatYMD(year: number, month: number, day: number): string {
   const date = new Date(year, month, day)
   const y = date.getFullYear()
@@ -20,7 +24,7 @@ export async function GET(req: NextRequest) {
   const endDate = searchParams.get('endDate')
   const month = searchParams.get('month') 
   const card = searchParams.get('card')
-  const categoryId = searchParams.get('categoryId') // ✅ 카테고리 필터 추가
+  const categoryId = searchParams.get('categoryId')
 
   let query = supabase
     .from('expenses')
@@ -30,7 +34,6 @@ export async function GET(req: NextRequest) {
 
   const targetCol = mode === 'payment' ? 'payment_date' : 'transaction_date'
 
-  // 기간 조회
   if (startDate && endDate) {
     query = query.gte(targetCol, startDate).lte(targetCol, endDate)
   } else if (month) {
@@ -41,19 +44,11 @@ export async function GET(req: NextRequest) {
     query = query.gte(targetCol, start).lt(targetCol, end)
   }
 
-  // 카드사 필터
   if (card && card !== 'ALL') {
     query = query.eq('card_company', card)
   }
 
-  // ✅ 카테고리 필터 로직
-  if (categoryId && categoryId !== 'ALL') {
-    // "1" 처럼 ID가 오면 특정 소분류, "P_식비" 처럼 오면 대분류로 처리하는 방식 등 고려 가능하나
-    // 여기서는 UI에서 소분류 ID를 넘겨준다고 가정 (또는 대분류 필터링을 원하면 아래 로직 수정 필요)
-    // 현재는 'parent_name' 필터링을 위해 category 테이블 join 조건을 걸어야 하는데 
-    // supabase join 필터는 복잡하므로, 일단은 간단하게 category_id 필터만 지원하거나
-    // 프론트에서 filtering 하는 게 더 빠를 수 있음.
-    // 하지만 여기선 category_id (소분류) 필터 지원
+  if (categoryId && categoryId !== 'ALL' && !isNaN(Number(categoryId))) {
     query = query.eq('category_id', categoryId)
   }
 
@@ -63,32 +58,37 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(data)
 }
 
-// POST: 지출 항목 추가
+// POST: 지출 항목 추가 (✅ 에러 수정됨)
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     
-    if (!body.transaction_date || !body.amount || !body.description) {
-        return NextResponse.json({ error: '필수 항목이 누락되었습니다.' }, { status: 400 })
+    // 🚨 중요: DB에 없는 필드(category 객체, id 등)를 확실히 제거
+    const { id, category, created_at, ...inputData } = body
+
+    // 필수 값 체크 (amount가 0일 수도 있으므로 undefined 체크)
+    if (!inputData.transaction_date || inputData.amount === undefined || !inputData.description) {
+        return NextResponse.json({ error: '필수 항목(날짜, 금액, 내역)이 누락되었습니다.' }, { status: 400 })
     }
 
-    let finalPaymentDate = body.payment_date === '' ? null : body.payment_date;
+    // 결제예정일 처리
+    let finalPaymentDate = inputData.payment_date === '' ? null : inputData.payment_date;
 
+    // 결제일 자동 계산 로직
     if (!finalPaymentDate) {
         const { data: settings } = await supabase.from('card_settings').select('*')
         
         if (settings) {
-            const companyName = body.card_company.trim();
+            const companyName = String(inputData.card_company).trim();
             const setting = settings.find((s: any) => 
                 companyName.includes(s.card_company) || s.card_company.includes(companyName)
             );
             
             if (setting) {
                 if (setting.calc_type === 'immediate') {
-                    finalPaymentDate = body.transaction_date;
+                    finalPaymentDate = inputData.transaction_date;
                 } else {
-                    // ✅ 날짜 밀림 방지 로직 적용
-                    const txDate = new Date(body.transaction_date); 
+                    const txDate = new Date(inputData.transaction_date); 
                     const day = txDate.getDate();
                     let targetMonth = txDate.getMonth();
                     let targetYear = txDate.getFullYear();
@@ -96,37 +96,48 @@ export async function POST(req: NextRequest) {
                     if (day >= setting.usage_start_day) {
                         targetMonth += 1;
                     }
-                    
-                    // toISOString 사용 금지 -> formatYMD 사용
                     finalPaymentDate = formatYMD(targetYear, targetMonth, setting.payment_day);
                 }
             }
         }
     }
 
+    // 최종 저장 데이터 구성
     const insertData = {
-        ...body,
+        ...inputData, // category 등의 필드가 제거된 상태
         payment_date: finalPaymentDate,
-        category: undefined
     }
 
-    const { error } = await supabase.from('expenses').insert([insertData])
+    const { error } = await supabase
+      .from('expenses')
+      .insert([insertData])
+
     if (error) throw error
     return NextResponse.json({ success: true })
   } catch (err: any) {
+    console.error('POST Error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
 
+// PATCH: 내역 수정 (✅ 에러 수정됨)
 export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json()
+    
+    // 🚨 중요: DB에 없는 필드를 확실히 제거
     const { id, category, created_at, ...updates } = body
+    
+    // 빈 날짜 처리
     if (updates.payment_date === '') updates.payment_date = null;
 
     if (!id) return NextResponse.json({ error: 'ID is required' }, { status: 400 })
 
-    const { error } = await supabase.from('expenses').update(updates).eq('id', id)
+    const { error } = await supabase
+      .from('expenses')
+      .update(updates) // 정제된 데이터만 업데이트
+      .eq('id', id)
+
     if (error) throw error
     return NextResponse.json({ success: true })
   } catch (err: any) {
@@ -134,11 +145,13 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
+// DELETE: 내역 삭제
 export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
     const id = searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'ID is required' }, { status: 400 })
+
     const { error } = await supabase.from('expenses').delete().eq('id', id)
     if (error) throw error
     return NextResponse.json({ success: true })
