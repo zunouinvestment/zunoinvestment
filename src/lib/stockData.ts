@@ -1,6 +1,9 @@
 // src/lib/stockData.ts
-import yahooFinance from 'yahoo-finance2';
 import { KOSPI_200 } from './kospiCodes';
+
+// 🚨 중요: yahoo-finance2 라이브러리 로딩 방식 변경
+// Next.js (Server Component/API Route) 환경에서 import 호환성을 위해 require 사용
+const yahooFinance = require('yahoo-finance2').default;
 
 // RSI 계산 함수
 function calculateRSI(closes: number[], period: number = 14) {
@@ -40,29 +43,31 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 export async function fetchOversoldStocks() {
   const candidates = [];
   
-  // Vercel 타임아웃 방지를 위해 일단 30개만 스캔 (안정화되면 늘리세요)
+  // Vercel 타임아웃 방지: 일단 30개만 스캔
   const targetList = KOSPI_200.slice(0, 30); 
 
   console.log(`🚀 [System] 총 ${targetList.length}개 종목 데이터 수집 시작...`);
 
+  // 혹시라도 전역 설정을 억제해야 한다면 아래 코드 활성화 (보통은 불필요)
+  // yahooFinance.suppressNotices(['yahooSurvey']);
+
   for (const stock of targetList) {
     try {
-      // ✅ [수정됨] TypeScript 오류 해결을 위해 'as any[]' 추가
-      const quote = await yahooFinance.historical(stock.code, { period1: '2mo', interval: '1d' }) as any[];
+      // historical 호출
+      const quote = await yahooFinance.historical(stock.code, { 
+        period1: '2mo', 
+        interval: '1d' 
+      }) as any[];
       
-      // 배열인지 확인하고 길이가 충분한지 체크
       if (!Array.isArray(quote) || quote.length < 20) {
-        console.warn(`⚠️ 데이터 부족 또는 형식 오류: ${stock.name}`);
+        console.warn(`⚠️ 데이터 부족: ${stock.name}`);
         continue;
       }
 
       const closes = quote.map((q: any) => q.close);
       const currentPrice = closes[closes.length - 1];
-      
-      // RSI 계산
       const rsi = calculateRSI(closes);
-
-      // 필터 없이 모든 종목 수집 (상대평가용)
+      
       const prevPrice = closes[closes.length - 2];
       const changeRate = ((currentPrice - prevPrice) / prevPrice) * 100;
 
@@ -72,16 +77,16 @@ export async function fetchOversoldStocks() {
         price: currentPrice,
         changeRate: changeRate.toFixed(2),
         rsi: rsi.toFixed(2),
-        history: closes.slice(-5).join(' -> ') // 최근 5일 흐름
+        history: closes.slice(-5).join(' -> ') 
       });
 
-    } catch (e) {
-      console.error(`❌ 수집 실패 (${stock.name}):`, e);
+    } catch (e: any) {
+      console.error(`❌ 수집 실패 (${stock.name}):`, e.message || e);
       continue;
     }
     
-    // 딜레이
-    await delay(10);
+    // 딜레이 (너무 짧으면 차단될 수 있으니 50ms 권장)
+    await delay(50);
   }
 
   console.log(`📊 [System] 최종 수집된 종목 수: ${candidates.length}개`);
@@ -91,7 +96,7 @@ export async function fetchOversoldStocks() {
     return [];
   }
 
-  // RSI 낮은 순(과매도 심한 순) 정렬
+  // RSI 낮은 순 정렬
   candidates.sort((a, b) => Number(a.rsi) - Number(b.rsi));
 
   // 상위 10개 리턴
