@@ -1,9 +1,6 @@
 // src/lib/stockData.ts
+import yahooFinance from 'yahoo-finance2'; // ✅ 이제 표준 import가 정상 작동합니다.
 import { KOSPI_200 } from './kospiCodes';
-
-// 🚨 중요: yahoo-finance2 로딩 방식 변경 (Next.js 서버 환경 호환성)
-// 최신 버전에서는 default export를 명시적으로 가져와야 할 수 있습니다.
-import yahooFinance from 'yahoo-finance2';
 
 // RSI 계산 함수
 function calculateRSI(closes: number[], period: number = 14) {
@@ -43,33 +40,32 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 export async function fetchOversoldStocks() {
   const candidates = [];
   
-  // Vercel 타임아웃 방지: 일단 30개만 스캔
+  // Vercel 타임아웃 방지: 30개만 스캔 (안정화되면 50, 100으로 늘리세요)
   const targetList = KOSPI_200.slice(0, 30); 
 
-  console.log(`🚀 [System] 총 ${targetList.length}개 종목 데이터 수집 시작...`);
-
-  // 🚨 중요: Yahoo Finance 라이브러리 초기화 문제 해결 시도
-  // 일부 환경에서 전역 인스턴스가 아닌 정적 메서드처럼 동작할 수 있음
-  // 아래 코드는 그대로 둡니다.
+  console.log(`🚀 [System] 총 ${targetList.length}개 종목 데이터 수집 시작 (v2.4.3)...`);
 
   for (const stock of targetList) {
     try {
-      // ✅ historical 메서드 호출 시 옵션 타입 명시
+      // ✅ 2.4.3 버전 API 호출
       const quote = await yahooFinance.historical(stock.code, { 
-        period1: '2mo', // 최근 2달
-        interval: '1d'  // 일봉
-      }) as any[]; // TypeScript 오류 방지용 강제 캐스팅
+        period1: '2mo', 
+        interval: '1d' 
+      });
       
-      // 데이터 유효성 검사
-      if (!Array.isArray(quote) || quote.length < 20) {
-        console.warn(`⚠️ 데이터 부족: ${stock.name}`);
+      // 데이터 검증
+      if (!quote || quote.length < 20) {
+        // console.warn(`⚠️ 데이터 부족: ${stock.name}`);
         continue;
       }
 
       const closes = quote.map((q: any) => q.close);
       const currentPrice = closes[closes.length - 1];
-      const rsi = calculateRSI(closes);
       
+      // RSI 계산
+      const rsi = calculateRSI(closes);
+
+      // 상대평가를 위해 모든 종목 수집
       const prevPrice = closes[closes.length - 2];
       const changeRate = ((currentPrice - prevPrice) / prevPrice) * 100;
 
@@ -83,13 +79,12 @@ export async function fetchOversoldStocks() {
       });
 
     } catch (e: any) {
-      // 에러 메시지 상세 출력
-      console.error(`❌ 수집 실패 (${stock.name}):`, e.message || e);
+      console.error(`❌ 수집 실패 (${stock.name}):`, e.message);
       continue;
     }
     
-    // 딜레이 (너무 짧으면 차단될 수 있으니 50ms 권장)
-    await delay(50);
+    // 딜레이
+    await delay(20);
   }
 
   console.log(`📊 [System] 최종 수집된 종목 수: ${candidates.length}개`);
