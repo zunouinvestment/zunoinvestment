@@ -34,38 +34,35 @@ function calculateRSI(closes: number[], period: number = 14) {
   return 100 - (100 / (1 + rs));
 }
 
-// 딜레이 함수 (너무 길면 타임아웃 나므로 짧게 조정)
+// 딜레이 함수
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export async function fetchOversoldStocks() {
   const candidates = [];
   
-  // 🚨 중요: Vercel 무료 플랜 타임아웃 방지를 위해 일단 30개만 스캔합니다.
-  // 작동 확인되면 50, 100으로 조금씩 늘려보세요.
+  // Vercel 타임아웃 방지를 위해 일단 30개만 스캔 (안정화되면 늘리세요)
   const targetList = KOSPI_200.slice(0, 30); 
 
   console.log(`🚀 [System] 총 ${targetList.length}개 종목 데이터 수집 시작...`);
 
   for (const stock of targetList) {
     try {
-      // 최근 2달 데이터 요청
-      const quote = await yahooFinance.historical(stock.code, { period1: '2mo', interval: '1d' });
+      // ✅ [수정됨] TypeScript 오류 해결을 위해 'as any[]' 추가
+      const quote = await yahooFinance.historical(stock.code, { period1: '2mo', interval: '1d' }) as any[];
       
-      if (!quote || quote.length < 20) {
-        console.warn(`⚠️ 데이터 부족: ${stock.name}`);
+      // 배열인지 확인하고 길이가 충분한지 체크
+      if (!Array.isArray(quote) || quote.length < 20) {
+        console.warn(`⚠️ 데이터 부족 또는 형식 오류: ${stock.name}`);
         continue;
       }
 
-      const closes = quote.map(q => q.close);
+      const closes = quote.map((q: any) => q.close);
       const currentPrice = closes[closes.length - 1];
       
       // RSI 계산
       const rsi = calculateRSI(closes);
 
-      // ✅ [필터 완전 제거] 
-      // RSI 수치 상관없이 일단 모든 정상 데이터를 후보군에 넣습니다.
-      // 나중에 정렬해서 하위 5개를 뽑으면 그게 현재 시장에서 상대적으로 가장 많이 떨어진 종목입니다.
-      
+      // 필터 없이 모든 종목 수집 (상대평가용)
       const prevPrice = closes[closes.length - 2];
       const changeRate = ((currentPrice - prevPrice) / prevPrice) * 100;
 
@@ -78,29 +75,25 @@ export async function fetchOversoldStocks() {
         history: closes.slice(-5).join(' -> ') // 최근 5일 흐름
       });
 
-      // 진행 상황 로그 (Vercel 로그에서 확인용)
-      // console.log(`✅ 수집 성공: ${stock.name} (RSI: ${rsi.toFixed(1)})`);
-
     } catch (e) {
       console.error(`❌ 수집 실패 (${stock.name}):`, e);
       continue;
     }
     
-    // 딜레이 10ms로 단축 (타임아웃 방지)
+    // 딜레이
     await delay(10);
   }
 
   console.log(`📊 [System] 최종 수집된 종목 수: ${candidates.length}개`);
 
   if (candidates.length === 0) {
-    console.error("🚨 [System] 수집된 데이터가 0개입니다. Yahoo Finance API가 차단되었거나 타임아웃일 수 있습니다.");
+    console.error("🚨 [System] 수집된 데이터가 0개입니다.");
     return [];
   }
 
-  // RSI 낮은 순(과매도 심한 순)으로 오름차순 정렬
+  // RSI 낮은 순(과매도 심한 순) 정렬
   candidates.sort((a, b) => Number(a.rsi) - Number(b.rsi));
 
-  // 상위 10개만 리턴 (Gemini에게 보낼 최종 후보)
-  // RSI가 70이어도, 다른게 80이면 70인 종목이 선택됩니다.
+  // 상위 10개 리턴
   return candidates.slice(0, 10);
 }
