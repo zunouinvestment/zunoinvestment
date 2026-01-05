@@ -1,9 +1,9 @@
 // src/lib/stockData.ts
 import { KOSPI_200 } from './kospiCodes';
 
-// 🚨 중요: yahoo-finance2 라이브러리 로딩 방식 변경
-// Next.js (Server Component/API Route) 환경에서 import 호환성을 위해 require 사용
-const yahooFinance = require('yahoo-finance2').default;
+// 🚨 중요: yahoo-finance2 로딩 방식 변경 (Next.js 서버 환경 호환성)
+// 최신 버전에서는 default export를 명시적으로 가져와야 할 수 있습니다.
+import yahooFinance from 'yahoo-finance2';
 
 // RSI 계산 함수
 function calculateRSI(closes: number[], period: number = 14) {
@@ -48,17 +48,19 @@ export async function fetchOversoldStocks() {
 
   console.log(`🚀 [System] 총 ${targetList.length}개 종목 데이터 수집 시작...`);
 
-  // 혹시라도 전역 설정을 억제해야 한다면 아래 코드 활성화 (보통은 불필요)
-  // yahooFinance.suppressNotices(['yahooSurvey']);
+  // 🚨 중요: Yahoo Finance 라이브러리 초기화 문제 해결 시도
+  // 일부 환경에서 전역 인스턴스가 아닌 정적 메서드처럼 동작할 수 있음
+  // 아래 코드는 그대로 둡니다.
 
   for (const stock of targetList) {
     try {
-      // historical 호출
+      // ✅ historical 메서드 호출 시 옵션 타입 명시
       const quote = await yahooFinance.historical(stock.code, { 
-        period1: '2mo', 
-        interval: '1d' 
-      }) as any[];
+        period1: '2mo', // 최근 2달
+        interval: '1d'  // 일봉
+      }) as any[]; // TypeScript 오류 방지용 강제 캐스팅
       
+      // 데이터 유효성 검사
       if (!Array.isArray(quote) || quote.length < 20) {
         console.warn(`⚠️ 데이터 부족: ${stock.name}`);
         continue;
@@ -81,6 +83,7 @@ export async function fetchOversoldStocks() {
       });
 
     } catch (e: any) {
+      // 에러 메시지 상세 출력
       console.error(`❌ 수집 실패 (${stock.name}):`, e.message || e);
       continue;
     }
