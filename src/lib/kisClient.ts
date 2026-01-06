@@ -6,6 +6,7 @@ const BASE_URL =
   process.env.KIS_BASE_URL ??
   'https://openapi.koreainvestment.com:9443';
 
+// ✅ 사용자의 환경변수 키 (HANKUK_...)만 사용하도록 고정
 const APP_KEY = process.env.HANKUK_API_KEY;
 const APP_SECRET = process.env.HANKUK_SECRET_KEY;
 
@@ -62,8 +63,7 @@ export interface KisPriceResult {
 }
 
 // ---- 메모리 캐시 (프로세스 단위) ----
-let memoryToken: { value: string; expiresAtMs: number } | null =
-  null;
+let memoryToken: { value: string; expiresAtMs: number } | null = null;
 
 // DB 토큰 관리용 상수
 const TOKEN_PROVIDER = 'KIS';
@@ -311,7 +311,7 @@ async function requestDomesticPriceWithToken(
   };
 }
 
-// ---------- 공개 함수 ----------
+// ---------- 공개 함수: 현재가 조회 ----------
 export async function getDomesticStockPrice(
   rawCode: string,
 ): Promise<KisPriceResult> {
@@ -326,8 +326,9 @@ export async function getDomesticStockPrice(
   return requestDomesticPriceWithToken(code, token, true);
 }
 
+
 // ==================================================================
-// ✅ [추가] AI 추천용 일봉 데이터 조회 (기존 코드 영향 없음)
+// ✅ [신규 기능] AI 추천용 일봉 데이터 조회 (기존 로직 및 DB 토큰 사용)
 // ==================================================================
 
 interface KisDailyPriceItem {
@@ -347,7 +348,7 @@ interface KisDailyApiResponse {
   output2: KisDailyPriceItem[]; // 일봉 데이터 배열
 }
 
-// 내부 함수: 토큰을 받아 일봉 데이터 요청
+// 내부 함수: 토큰을 받아 일봉 데이터 요청 (상단의 APP_KEY/APP_SECRET 사용)
 async function requestDailyHistoryWithToken(
   code: string,
   token: string,
@@ -360,7 +361,7 @@ async function requestDailyHistoryWithToken(
     FID_INPUT_DATE_1: startDate, // 시작일 (YYYYMMDD)
     FID_INPUT_DATE_2: endDate,   // 종료일 (YYYYMMDD)
     FID_PERIOD_DIV_CODE: 'D',    // D: 일봉
-    FID_ORG_ADJ_PRC: '0',        // 0: 수정주가 미반영 (1: 반영)
+    FID_ORG_ADJ_PRC: '0',        // 0: 수정주가 미반영
   });
 
   const url = `${BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice?${params.toString()}`;
@@ -370,9 +371,9 @@ async function requestDailyHistoryWithToken(
     headers: {
       'content-type': 'application/json; charset=utf-8',
       authorization: `Bearer ${token}`,
-      appkey: APP_KEY ?? '',
-      appsecret: APP_SECRET ?? '',
-      tr_id: 'FHKST03010100', // ✅ 주식 일봉 차트 조회 TR ID
+      appkey: APP_KEY ?? '',       // ✅ 상단에 정의된 HANKUK 키 사용
+      appsecret: APP_SECRET ?? '', // ✅ 상단에 정의된 HANKUK 키 사용
+      tr_id: 'FHKST03010100',      // ✅ 주식 일봉 차트 조회 TR ID
       custtype: 'P',
     },
     cache: 'no-store',
@@ -392,17 +393,16 @@ async function requestDailyHistoryWithToken(
   if (!output || output.length === 0) return [];
 
   // 과거 -> 현재 순서로 종가만 추출하여 반환 (KIS는 최신순으로 줌 -> reverse 필요)
-  // 필요한 만큼(최대 30일치)만 잘라서 씁니다.
   return output
-    .slice(0, 40) // 넉넉히 40개 가져옴
+    .slice(0, 40) // 최대 40일치
     .map((item) => Number(item.stck_clpr))
-    .reverse(); // 배열을 [과거, ..., 오늘] 순서로 뒤집음
+    .reverse(); // [과거, ..., 오늘] 순서
 }
 
-// 🟢 [공개 함수] 종목코드만 넣으면 일봉 종가 배열 반환
+// 🟢 [공개 함수] AI 분석용 일봉 데이터 가져오기 (DB 토큰 재사용)
 export async function getDailyStockHistory(rawCode: string): Promise<number[]> {
   const code = normalizeStockCode(rawCode);
-  const token = await getKisAccessToken(); // 기존 토큰 로직 재사용 (개꿀!)
+  const token = await getKisAccessToken(); // ✅ 기존 DB 토큰 관리 로직 그대로 활용
 
   // 날짜 계산 (오늘 ~ 3달 전)
   const today = new Date();
