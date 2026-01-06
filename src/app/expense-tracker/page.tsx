@@ -65,10 +65,6 @@ function CategoryModal({
     )
 }
 
-// ... (기존 CardLinkModal, ManualAddModal, CategoryCell, EditModal, RowSetting 컴포넌트 유지) ...
-// 코드 길이상 중복되는 부분은 생략하지 않고 전체 코드를 드립니다. 
-// 아래 코드를 그대로 덮어쓰세요.
-
 function CardLinkModal({ onClose }: { onClose: () => void }) {
   const links = [
     { name: '삼성', url: 'https://www.samsungcard.com/', color: 'text-blue-600' },
@@ -178,14 +174,14 @@ export default function ExpenseTrackerPage() {
   const [isUploading, setIsUploading] = useState(false)
   
   const [viewMode, setViewMode] = useState<'list' | 'settings'>('list')
-  const [settingsTab, setSettingsTab] = useState<'card' | 'category'>('card') // ✅ 설정 탭 상태 추가
+  const [settingsTab, setSettingsTab] = useState<'card' | 'category'>('card')
 
   const [editingItem, setEditingItem] = useState<ExpenseRecord | null>(null)
   
   // 모달 상태
   const [showAddModal, setShowAddModal] = useState(false)
   const [showLinkModal, setShowLinkModal] = useState(false)
-  const [editingCategory, setEditingCategory] = useState<ExpenseCategory | null | undefined>(undefined) // undefined: 모달 닫힘, null: 추가, 객체: 수정
+  const [editingCategory, setEditingCategory] = useState<ExpenseCategory | null | undefined>(undefined)
 
   // 카드 추가 폼
   const [newCardName, setNewCardName] = useState('')
@@ -193,15 +189,49 @@ export default function ExpenseTrackerPage() {
   const [newPayDay, setNewPayDay] = useState('13')
   const [newStartDay, setNewStartDay] = useState('1')
 
-  const [filterMode, setFilterMode] = useState<'transaction' | 'payment'>('transaction')
-  const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0])
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0])
+  const [filterMode, setFilterMode] = useState<'transaction' | 'payment'>('payment')
+  
+  // 날짜 초기값
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  
   const [filterCard, setFilterCard] = useState('ALL')
   const [filterCategory, setFilterCategory] = useState('ALL')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // ✅ [수정] 필터 모드 변경 시 날짜 자동 세팅 로직
+  useEffect(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth(); // 0-indexed (0: Jan)
+
+    // 날짜 포맷 함수 (YYYY-MM-DD) - 로컬 타임존 기준
+    const toISODate = (d: Date) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    };
+
+    if (filterMode === 'transaction') {
+        // 소비일 기준: 전월 1일 ~ 전월 말일
+        const start = new Date(year, month - 1, 1);
+        const end = new Date(year, month, 0); // 이번 달 0일 = 지난 달 마지막 날
+        setStartDate(toISODate(start));
+        setEndDate(toISODate(end));
+    } else {
+        // 결제일 기준: 전월 21일 ~ 당월 20일
+        const start = new Date(year, month - 1, 21);
+        const end = new Date(year, month, 20);
+        setStartDate(toISODate(start));
+        setEndDate(toISODate(end));
+    }
+  }, [filterMode]) // filterMode가 변경될 때마다 실행
+
   const loadData = async () => {
+    if (!startDate || !endDate) return; // 날짜 초기화 전에는 실행 방지
+
     setLoading(true)
     try {
       const qs = new URLSearchParams({ mode: filterMode, startDate, endDate, card: filterCard })
@@ -251,7 +281,6 @@ export default function ExpenseTrackerPage() {
   const handleSaveSetting = async (cardName: string, pDay: number, sDay: number, type: 'sliding' | 'immediate') => { if(!cardName) return alert('명칭을 입력해주세요.'); try { const res = await fetch('/api/expenses/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ card_company: cardName, payment_day: pDay, usage_start_day: sDay, calc_type: type }) }); if (!res.ok) throw new Error('저장 실패'); setNewCardName(''); setNewPayDay('13'); setNewStartDay('1'); setNewType('sliding'); loadData() } catch(e) { alert('오류가 발생했습니다.') } }
   const handleDeleteSetting = async (company: string) => { if(!confirm(`${company} 설정을 삭제하시겠습니까?`)) return; await fetch(`/api/expenses/settings?company=${encodeURIComponent(company)}`, { method: 'DELETE' }); loadData() }
   
-  // ✅ 카테고리 저장/수정 핸들러
   const handleSaveCategory = async (data: any) => {
     try {
         const url = '/api/expenses/categories'
@@ -262,7 +291,6 @@ export default function ExpenseTrackerPage() {
         loadData()
     } catch(e) { alert('오류가 발생했습니다.') }
   }
-  // ✅ 카테고리 삭제 핸들러
   const handleDeleteCategory = async (id: number) => {
     if(!confirm('카테고리를 삭제하시겠습니까? (사용 중인 경우 삭제되지 않습니다)')) return
     try {
@@ -297,8 +325,8 @@ export default function ExpenseTrackerPage() {
                 <div className="flex items-center gap-1 md:gap-2 border-r pr-2 md:pr-4">
                     <Filter className="w-3 h-3 md:w-4 md:h-4 text-gray-500"/>
                     <select className="border-none bg-transparent font-bold text-gray-700 outline-none" value={filterMode} onChange={(e) => setFilterMode(e.target.value as any)}>
-                        <option value="transaction">소비일</option>
                         <option value="payment">결제일</option>
+                        <option value="transaction">소비일</option>
                     </select>
                 </div>
                 <div className="flex items-center gap-1 md:gap-2 w-full md:w-auto">
@@ -353,25 +381,10 @@ export default function ExpenseTrackerPage() {
 
       {viewMode === 'settings' && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            {/* ✅ 설정 탭 헤더 */}
             <div className="flex border-b mb-6">
-                <button 
-                    onClick={() => setSettingsTab('card')}
-                    className={`px-6 py-3 font-medium text-sm transition-colors relative ${settingsTab === 'card' ? 'text-black' : 'text-gray-400 hover:text-gray-600'}`}
-                >
-                    카드 설정
-                    {settingsTab === 'card' && <motion.div layoutId="underline" className="absolute bottom-0 left-0 right-0 h-0.5 bg-black" />}
-                </button>
-                <button 
-                    onClick={() => setSettingsTab('category')}
-                    className={`px-6 py-3 font-medium text-sm transition-colors relative ${settingsTab === 'category' ? 'text-black' : 'text-gray-400 hover:text-gray-600'}`}
-                >
-                    카테고리 설정
-                    {settingsTab === 'category' && <motion.div layoutId="underline" className="absolute bottom-0 left-0 right-0 h-0.5 bg-black" />}
-                </button>
+                <button onClick={() => setSettingsTab('card')} className={`px-6 py-3 font-medium text-sm transition-colors relative ${settingsTab === 'card' ? 'text-black' : 'text-gray-400 hover:text-gray-600'}`}>카드 설정 {settingsTab === 'card' && <motion.div layoutId="underline" className="absolute bottom-0 left-0 right-0 h-0.5 bg-black" />}</button>
+                <button onClick={() => setSettingsTab('category')} className={`px-6 py-3 font-medium text-sm transition-colors relative ${settingsTab === 'category' ? 'text-black' : 'text-gray-400 hover:text-gray-600'}`}>카테고리 설정 {settingsTab === 'category' && <motion.div layoutId="underline" className="absolute bottom-0 left-0 right-0 h-0.5 bg-black" />}</button>
             </div>
-
-            {/* 카드 설정 컨텐츠 */}
             {settingsTab === 'card' && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <Card className="md:col-span-2 overflow-hidden">
@@ -389,8 +402,6 @@ export default function ExpenseTrackerPage() {
                     </Card>
                 </div>
             )}
-
-            {/* ✅ 카테고리 설정 컨텐츠 (새로 추가됨) */}
             {settingsTab === 'category' && (
                 <div>
                     <div className="flex justify-between items-center mb-4">
@@ -429,8 +440,6 @@ export default function ExpenseTrackerPage() {
       {showAddModal && <ManualAddModal categories={categories} settings={cardSettings} onClose={() => setShowAddModal(false)} onSave={handleManualAdd} />}
       {editingItem && <EditModal item={editingItem} categories={categories} onClose={() => setEditingItem(null)} onSave={handleSaveEdit} />}
       {showLinkModal && <CardLinkModal onClose={() => setShowLinkModal(false)} />}
-      
-      {/* ✅ 카테고리 모달 렌더링 */}
       {editingCategory !== undefined && <CategoryModal category={editingCategory} onClose={() => setEditingCategory(undefined)} onSave={handleSaveCategory} />}
     </div>
   )

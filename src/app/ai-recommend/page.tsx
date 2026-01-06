@@ -2,9 +2,26 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabaseClient'
-import { Bot, TrendingUp, Target, FileText, Info, ChevronDown, ChevronUp, Play, Loader2, RefreshCw } from 'lucide-react'
+import { supabase } from '@/lib/supabaseClient' // 🚨 본인의 클라이언트 경로 확인 (@/lib/supabaseClient)
+import { Bot, TrendingUp, Target, FileText, Info, ChevronDown, ChevronUp, Play, Loader2, RefreshCw, Calendar, Flame } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+
+// --- 타입 정의 ---
+type Recommendation = {
+  id: number;
+  recommend_date: string;
+  code: string;
+  name: string;
+  close_price: number;
+  target_price: number;
+  reason_summary: string;
+  ai_analysis_detail: string;
+};
+
+type HotStock = {
+  name: string;
+  count: number;
+};
 
 // --- 컴포넌트: 카드 ---
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
@@ -56,18 +73,18 @@ function LogicGuide() {
                                     </ul>
                                 </div>
                                 <div>
-                                    <h4 className="font-bold text-black mb-2 flex items-center gap-1">🤖 2차 필터링 (Gemini AI)</h4>
+                                    <h4 className="font-bold text-black mb-2 flex items-center gap-1">🤖 2차 필터링 (AI 심층 분석)</h4>
                                     <ul className="list-disc pl-4 space-y-1">
                                         <li>
                                             <span className="font-semibold text-indigo-600">옥석 가리기</span>
                                             <p className="text-xs text-slate-500 mt-0.5">
-                                                1차 필터링된 종목 중, 30년 경력 퀀트 투자자 페르소나를 가진 Gemini가 재무 건전성과 최근 뉴스 트렌드를 고려해 <b>Top 5</b>를 선정합니다.
+                                                1차 필터링된 종목 중, AI가 재무 건전성과 최근 뉴스 트렌드, 수급 주체를 분석하여 <b>Top 5</b>를 선정합니다.
                                             </p>
                                         </li>
                                         <li className="mt-2">
                                             <span className="font-semibold text-indigo-600">목표가 산정</span>
                                             <p className="text-xs text-slate-500 mt-0.5">
-                                                단기 스윙(1주일) 기준으로 <b>3% 및 5% 수익 구간</b>을 AI가 직접 계산하여 제안합니다.
+                                                단기 스윙(1주일) 기준으로 <b>3% ~ 5% 수익 구간</b>을 AI가 직접 계산하여 제안합니다.
                                             </p>
                                         </li>
                                     </ul>
@@ -83,26 +100,80 @@ function LogicGuide() {
 
 // === 메인 페이지 ===
 export default function AIRecommendPage() {
-  const [list, setList] = useState<any[]>([])
+  const [list, setList] = useState<Recommendation[]>([])
   const [loading, setLoading] = useState(true)
-  const [isAnalyzing, setIsAnalyzing] = useState(false) // 분석 실행 상태
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  
+  // 기능 추가용 State
+  const [dates, setDates] = useState<string[]>([])
+  const [selectedDate, setSelectedDate] = useState<string>('')
+  const [hotStocks, setHotStocks] = useState<HotStock[]>([])
 
-  // 데이터 로드 함수
-  const loadData = async () => {
+  // 1. 초기 데이터 로드 (날짜 목록 & Hot Stocks)
+  const loadInitialData = async () => {
+    // A. 날짜 목록 가져오기
+    const { data: dateData } = await supabase
+        .from('stock_ai_recommendations')
+        .select('recommend_date')
+        .order('recommend_date', { ascending: false })
+    
+    if (dateData) {
+        const uniqueDates = Array.from(new Set(dateData.map(d => d.recommend_date)))
+        setDates(uniqueDates)
+        // 가장 최신 날짜를 기본 선택
+        if (uniqueDates.length > 0) {
+            setSelectedDate(uniqueDates[0])
+        }
+    }
+
+    // B. Hot Stocks (최근 7일간 2회 이상 추천)
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+    const dateStr = oneWeekAgo.toISOString().split('T')[0];
+
+    const { data: historyData } = await supabase
+        .from('stock_ai_recommendations')
+        .select('name, code')
+        .gte('recommend_date', dateStr)
+
+    if (historyData) {
+        const countMap: Record<string, number> = {};
+        historyData.forEach(item => {
+            countMap[item.name] = (countMap[item.name] || 0) + 1;
+        });
+        
+        const hotList = Object.entries(countMap)
+            .filter(([_, count]) => count >= 2)
+            .sort((a, b) => b[1] - a[1])
+            .map(([name, count]) => ({ name, count }));
+        
+        setHotStocks(hotList);
+    }
+  }
+
+  // 2. 선택된 날짜의 리스트 로드
+  const loadListByDate = async (date: string) => {
+    if (!date) return;
     setLoading(true)
     const { data } = await supabase
         .from('stock_ai_recommendations')
         .select('*')
-        .order('recommend_date', { ascending: false })
-        .limit(20)
+        .eq('recommend_date', date)
+        .order('target_price', { ascending: false })
     
     if (data) setList(data)
     setLoading(false)
   }
 
+  // 초기 실행
   useEffect(() => {
-    loadData()
+    loadInitialData()
   }, [])
+
+  // 날짜 변경 시 리스트 갱신
+  useEffect(() => {
+    loadListByDate(selectedDate)
+  }, [selectedDate])
 
   // 수동 분석 실행 핸들러
   const handleManualAnalysis = async () => {
@@ -113,14 +184,15 @@ export default function AIRecommendPage() {
 
     setIsAnalyzing(true)
     try {
-        // API 호출 (타임아웃 방지를 위해 긴 시간 대기 필요할 수 있음)
         const res = await fetch(`/api/cron/daily-recommend?key=${key}`)
         const result = await res.json()
 
         if (!res.ok) throw new Error(result.error || '분석 실패')
 
         alert(`✅ 분석 완료! ${result.count || 5}개 종목이 추천되었습니다.`)
-        loadData() // 목록 새로고침
+        
+        // 데이터 전체 새로고침
+        await loadInitialData()
     } catch (e: any) {
         alert(`❌ 오류 발생: ${e.message}`)
     } finally {
@@ -129,16 +201,16 @@ export default function AIRecommendPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="space-y-6 max-w-4xl mx-auto pb-20">
       {/* 헤더 섹션 */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
-            <div className="p-3 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-xl shadow-lg">
+            <div className="p-3 bg-gradient-to-br from-indigo-600 to-purple-700 rounded-xl shadow-lg">
                 <Bot className="w-8 h-8 text-white" />
             </div>
             <div>
-                <h1 className="text-2xl font-bold tracking-tight text-gray-900">Gemini's Pick</h1>
-                <p className="text-sm text-gray-500">AI가 매일 오후 5시, 과대낙폭 유망 종목을 분석합니다.</p>
+                <h1 className="text-2xl font-bold tracking-tight text-gray-900">AI 주식 심층 분석</h1>
+                <p className="text-sm text-gray-500">매일 오후 5시, 퀀트 알고리즘과 AI가 낙폭과대 종목을 선정합니다.</p>
             </div>
         </div>
 
@@ -166,14 +238,64 @@ export default function AIRecommendPage() {
         </button>
       </div>
 
+      {/* 🔥 Hot Stocks 트래킹 섹션 (데이터가 있을 때만 표시) */}
+      <AnimatePresence>
+      {hotStocks.length > 0 && (
+        <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-orange-50 border border-orange-200 rounded-xl p-5 mb-6"
+        >
+             <h2 className="text-sm font-bold text-orange-800 mb-3 flex items-center gap-2">
+                <Flame className="w-4 h-4 text-orange-600 fill-orange-600" />
+                최근 7일간 AI가 반복 추천한 종목 (Hot!)
+            </h2>
+            <div className="flex flex-wrap gap-2">
+                {hotStocks.map((stock) => (
+                    <div key={stock.name} className="bg-white px-3 py-1.5 rounded-lg border border-orange-100 shadow-sm flex items-center gap-2 text-sm font-medium text-gray-700">
+                        {stock.name}
+                        <span className="bg-orange-100 text-orange-700 text-xs px-1.5 py-0.5 rounded-full font-bold">
+                            {stock.count}회
+                        </span>
+                    </div>
+                ))}
+            </div>
+        </motion.div>
+      )}
+      </AnimatePresence>
+
       {/* 로직 가이드 (토글) */}
       <LogicGuide />
 
+      {/* 📅 날짜 선택 필터 */}
+      <div className="flex justify-between items-center bg-white p-3 rounded-lg border border-gray-200 shadow-sm sticky top-2 z-10">
+        <div className="flex items-center gap-2 text-gray-700 font-bold">
+            <Calendar className="w-5 h-5 text-indigo-500" />
+            <span>{selectedDate} 리포트</span>
+        </div>
+        <div className="relative">
+            <select 
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="appearance-none bg-gray-50 border border-gray-300 text-gray-700 py-2 pl-4 pr-10 rounded-lg leading-tight focus:outline-none focus:bg-white focus:border-indigo-500 text-sm font-medium cursor-pointer"
+            >
+                {dates.map((date, idx) => (
+                    <option key={date} value={date}>
+                        {date} {idx === 0 ? '(최신)' : ''}
+                    </option>
+                ))}
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                <ChevronDown className="w-4 h-4" />
+            </div>
+        </div>
+      </div>
+
       {/* 로딩 상태 표시 */}
       {loading && !isAnalyzing && (
-        <div className="flex h-64 items-center justify-center text-gray-500">
-            <RefreshCw className="w-6 h-6 animate-spin mr-2" />
-            데이터를 불러오는 중...
+        <div className="flex h-64 items-center justify-center text-gray-500 flex-col gap-2">
+            <RefreshCw className="w-8 h-8 animate-spin text-indigo-400" />
+            <p className="text-sm">데이터를 불러오는 중입니다...</p>
         </div>
       )}
 
@@ -187,9 +309,12 @@ export default function AIRecommendPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.1 }}
             >
-                <Card className="border-l-4 border-l-indigo-500 hover:shadow-lg transition-shadow bg-white">
+                <Card className="border-l-4 border-l-indigo-500 hover:shadow-lg transition-shadow bg-white relative overflow-hidden group">
+                    {/* 카드 배경 효과 */}
+                    <div className="absolute top-0 right-0 p-20 bg-gradient-to-bl from-indigo-50 to-transparent rounded-bl-full opacity-50 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+
                     {/* 상단 정보 */}
-                    <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4 mb-5 pb-5 border-b border-dashed border-gray-200">
+                    <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4 mb-5 pb-5 border-b border-dashed border-gray-200 relative z-10">
                         <div>
                             <span className="inline-block px-2 py-1 bg-indigo-50 text-indigo-600 text-xs font-bold rounded mb-2 border border-indigo-100">
                                 {item.recommend_date} 추천
@@ -199,21 +324,21 @@ export default function AIRecommendPage() {
                                 <span className="text-base font-medium text-gray-400">({item.code})</span>
                             </h2>
                         </div>
-                        <div className="flex gap-6 text-sm bg-gray-50 p-3 rounded-lg">
+                        <div className="flex gap-6 text-sm bg-gray-50 p-3 rounded-lg border border-gray-100">
                             <div className="text-right">
                                 <div className="text-gray-400 text-xs mb-1">현재가</div>
                                 <div className="font-bold text-lg text-gray-700">{Number(item.close_price).toLocaleString()}원</div>
                             </div>
                             <div className="w-px h-10 bg-gray-200"></div>
                             <div className="text-right">
-                                <div className="text-indigo-500 text-xs mb-1 flex items-center justify-end gap-1"><Target className="w-3 h-3"/> 목표가</div>
-                                <div className="font-bold text-lg text-indigo-600">{Number(item.target_price).toLocaleString()}원</div>
+                                <div className="text-red-500 text-xs mb-1 flex items-center justify-end gap-1"><Target className="w-3 h-3"/> 목표가</div>
+                                <div className="font-bold text-lg text-red-600">{Number(item.target_price).toLocaleString()}원</div>
                             </div>
                         </div>
                     </div>
 
                     {/* 요약 */}
-                    <div className="mb-4">
+                    <div className="mb-4 relative z-10">
                         <h3 className="text-sm font-bold text-gray-900 mb-2 flex items-center gap-2">
                             <TrendingUp className="w-4 h-4 text-red-500"/> 핵심 추천 사유
                         </h3>
@@ -223,12 +348,12 @@ export default function AIRecommendPage() {
                     </div>
 
                     {/* 상세 분석 */}
-                    <div>
+                    <div className="relative z-10">
                         <h3 className="text-sm font-bold text-gray-900 mb-2 flex items-center gap-2">
-                            <FileText className="w-4 h-4 text-blue-500"/> Gemini 심층 분석
+                            <FileText className="w-4 h-4 text-blue-500"/> AI 심층 분석
                         </h3>
                         <div className="bg-slate-50 p-4 rounded-lg border border-slate-100 relative">
-                            <Bot className="w-12 h-12 text-slate-200 absolute top-2 right-2 -z-0" /> {/* 배경 아이콘 효과 */}
+                            <Bot className="w-12 h-12 text-slate-200 absolute top-2 right-2 -z-0" />
                             <p className="text-slate-700 text-sm leading-7 whitespace-pre-line relative z-10">
                                 {item.ai_analysis_detail}
                             </p>
@@ -241,7 +366,10 @@ export default function AIRecommendPage() {
             {list.length === 0 && (
                 <div className="text-center py-24 bg-white rounded-xl border border-dashed">
                     <Bot className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-400 font-medium">등록된 추천 내역이 없습니다.<br/>[지금 즉시 분석하기] 버튼을 눌러보세요!</p>
+                    <p className="text-gray-500 font-medium">
+                        {selectedDate} 데이터가 없습니다.<br/>
+                        다른 날짜를 선택하거나, 분석을 실행해주세요.
+                    </p>
                 </div>
             )}
         </div>

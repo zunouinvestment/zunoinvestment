@@ -23,9 +23,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ message: 'No candidates found' });
     }
 
-    // 2. Gemini 분석 요청
-    // 🚨 [수정됨] Pro 대신 무료 할당량이 넉넉한 'gemini-2.5-flash' 사용
-    // 아까 확인된 리스트에 있던 모델입니다.
+    // 2. Gemini 분석 요청 (gemini-2.5-flash 사용)
     const model = genAI.getGenerativeModel({ 
         model: "gemini-2.5-flash" 
     });
@@ -78,7 +76,8 @@ export async function GET(req: NextRequest) {
     const today = new Date().toISOString().split('T')[0];
     await supabaseAdmin.from('stock_ai_recommendations').delete().eq('recommend_date', today);
 
-    let telegramMsg = `⚡ *[Gemini 2.5 Flash 추천]* (${today})\n\n`;
+    // 🚨 [수정됨] Gemini 문구 제거 -> 'AI 심층 분석'으로 변경
+    let telegramMsg = `📈 *[오늘의 AI 심층 분석]* (${today})\n\n`;
 
     for (const item of recommendations) {
         await supabaseAdmin.from('stock_ai_recommendations').insert({
@@ -96,8 +95,8 @@ export async function GET(req: NextRequest) {
         telegramMsg += `   💬 ${item.reason_summary}\n\n`;
     }
     
-    // 도메인 수정
-    telegramMsg += `👉 [상세 리포트 보기](https://zunoinvestment.vercel.app/ai-recommend)`;
+    // 🚨 [수정됨] 링크 문구 변경
+    telegramMsg += `👉 [전체 리포트 & 과거기록 보기](https://zunoinvestment.vercel.app/ai-recommend)`;
     await sendTelegramMessage(telegramMsg);
 
     return NextResponse.json({ success: true, count: recommendations.length });
