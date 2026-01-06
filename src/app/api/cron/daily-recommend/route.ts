@@ -96,7 +96,7 @@ export async function GET(req: NextRequest) {
     }
     
     // 🚨 [수정됨] 링크 문구 변경
-    telegramMsg += `👉 [전체 리포트 & 과거기록 보기](https://zunoinvestment.vercel.app/ai-recommend)`;
+    telegramMsg += `👉 [전체 리포트 & 과거기록 보기](https://zunoinv.vercel.app/ai-recommend)`;
     await sendTelegramMessage(telegramMsg);
 
     return NextResponse.json({ success: true, count: recommendations.length });
