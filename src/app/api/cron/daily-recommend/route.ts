@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // 1. KIS API 데이터 수집
+    // 1. KIS API 데이터 수집 (한국투자증권 토큰 사용)
     const candidates = await fetchOversoldStocks();
 
     if (candidates.length === 0) {
@@ -24,38 +24,36 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ message: 'No candidates found' });
     }
 
-    // -----------------------------------------------------------
-    // 🚨 [긴급 조치] 모델을 'gemini-pro'로 변경 (404 에러 회피)
-    // -----------------------------------------------------------
-    
-    // 1. 모델 인스턴스 생성 (generationConfig 제거)
-    // gemini-pro는 application/json 설정을 지원하지 않을 수 있어 제거함.
+    // 2. Gemini 분석 요청
+    // ✅ [확인된 모델 사용] 님 계정에서 사용 가능한 최신 고성능 모델
     const model = genAI.getGenerativeModel({ 
-        model: "gemini-pro" 
+        model: "gemini-2.5-pro" 
     });
 
-    // 2. 프롬프트 강화 (JSON만 뱉어내도록 강력하게 지시)
     const prompt = `
-      You are a stock market expert.
-      Analyze the following KOSPI oversold stocks:
+      당신은 30년 경력의 월가 퀀트 투자 전문가입니다.
+      아래는 현재 KOSPI 과매도(RSI 저평가) 종목들입니다.
+
+      [후보군 데이터]
       ${JSON.stringify(candidates)}
 
-      Select top 5 stocks for short-term rebound.
+      [지시사항]
+      이 중 '단기 반등'과 '구조적 저평가' 매력이 가장 높은 5개 종목을 엄선하십시오.
       
-      CRITICAL INSTRUCTION:
-      Output MUST be a valid JSON array only. 
-      Do NOT use Markdown code blocks (like \`\`\`json).
-      Do NOT add any explanation before or after the JSON.
-      
-      Format:
+      [필수 출력 규칙]
+      1. 결과는 오직 **JSON 배열** 형식으로만 출력하세요.
+      2. 마크다운 기호(\`\`\`json)나 서론, 결론 같은 사족을 절대 붙이지 마세요.
+      3. 분석 내용은 한국어로 작성하며, 투자자를 설득할 수 있는 날카로운 통찰력을 담으세요.
+
+      [JSON 예시]
       [
         {
-          "code": "StockCode",
-          "name": "StockName",
-          "price": 0,
-          "target_price": 0,
-          "reason_summary": "Summary in Korean",
-          "ai_analysis_detail": "Detail in Korean (150 chars)"
+          "code": "005930",
+          "name": "삼성전자",
+          "price": 70000,
+          "target_price": 73500,
+          "reason_summary": "반도체 업황 턴어라운드 기대감",
+          "ai_analysis_detail": "RSI 28로 과매도 구간 진입. 최근 외국인 수급이 개선되고 있으며..."
         }
       ]
     `;
@@ -65,27 +63,24 @@ export async function GET(req: NextRequest) {
     const response = await result.response;
     let responseText = response.text();
 
-    // 🚨 안전장치: 마크다운 기호 제거 (gemini-pro가 가끔 붙임)
+    // 🚨 안전장치: 혹시 모를 마크다운 기호 제거 (JSON 파싱 에러 방지)
     responseText = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
 
-    // 4. JSON 파싱 시도
+    // 4. JSON 파싱
     let recommendations;
     try {
         recommendations = JSON.parse(responseText);
     } catch (e) {
         console.error("JSON Parse Error:", responseText);
-        // 파싱 실패 시 원본 텍스트라도 보내서 디버깅
-        await sendTelegramMessage(`⚠️ [JSON 파싱 실패] AI 응답이 올바르지 않습니다.\n${responseText.slice(0, 100)}...`);
+        await sendTelegramMessage(`⚠️ [시스템] AI 응답 파싱 실패. 원본: ${responseText.slice(0, 50)}...`);
         return NextResponse.json({ error: "JSON Parse Error" }, { status: 500 });
     }
 
-    // -----------------------------------------------------------
-
-    // 3. DB 저장 및 알림
+    // 5. DB 저장 및 알림
     const today = new Date().toISOString().split('T')[0];
     await supabaseAdmin.from('stock_ai_recommendations').delete().eq('recommend_date', today);
 
-    let telegramMsg = `🤖 *[Gemini Pro 분석]* (${today})\n\n`;
+    let telegramMsg = `🧠 *[Gemini 2.5 Pro 심층분석]* (${today})\n\n`;
 
     for (const item of recommendations) {
         await supabaseAdmin.from('stock_ai_recommendations').insert({
@@ -100,9 +95,10 @@ export async function GET(req: NextRequest) {
 
         telegramMsg += `📌 *${item.name}* (${item.price.toLocaleString()}원)\n`;
         telegramMsg += `   🎯 목표: ${item.target_price.toLocaleString()}원\n`;
-        telegramMsg += `   💡 ${item.reason_summary}\n\n`;
+        telegramMsg += `   💬 ${item.reason_summary}\n\n`;
     }
     
+    // 도메인 주소 수정 (본인 도메인으로)
     telegramMsg += `👉 [상세 리포트 보기](https://zunoinvestment.vercel.app/ai-recommend)`;
     await sendTelegramMessage(telegramMsg);
 
@@ -110,7 +106,7 @@ export async function GET(req: NextRequest) {
 
   } catch (error: any) {
     console.error("Gemini Error:", error);
-    await sendTelegramMessage(`⚠️ [Gemini 오류] ${error.message}`);
+    await sendTelegramMessage(`⚠️ [시스템 오류] ${error.message}`);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
