@@ -325,3 +325,91 @@ export async function getDomesticStockPrice(
   // 만료 시 한 번만 자동 재시도
   return requestDomesticPriceWithToken(code, token, true);
 }
+
+// ==================================================================
+// ✅ [추가] AI 추천용 일봉 데이터 조회 (기존 코드 영향 없음)
+// ==================================================================
+
+interface KisDailyPriceItem {
+  stck_bsop_date: string; // 영업일자
+  stck_clpr: string;      // 종가
+  stck_oprc: string;      // 시가
+  stck_hgpr: string;      // 고가
+  stck_lwpr: string;      // 저가
+  acml_vol: string;       // 거래량
+}
+
+interface KisDailyApiResponse {
+  rt_cd: string;
+  msg_cd: string;
+  msg1: string;
+  output1: any;
+  output2: KisDailyPriceItem[]; // 일봉 데이터 배열
+}
+
+// 내부 함수: 토큰을 받아 일봉 데이터 요청
+async function requestDailyHistoryWithToken(
+  code: string,
+  token: string,
+  startDate: string,
+  endDate: string
+): Promise<number[]> {
+  const params = new URLSearchParams({
+    FID_COND_MRKT_DIV_CODE: 'J',
+    FID_INPUT_ISCD: code,
+    FID_INPUT_DATE_1: startDate, // 시작일 (YYYYMMDD)
+    FID_INPUT_DATE_2: endDate,   // 종료일 (YYYYMMDD)
+    FID_PERIOD_DIV_CODE: 'D',    // D: 일봉
+    FID_ORG_ADJ_PRC: '0',        // 0: 수정주가 미반영 (1: 반영)
+  });
+
+  const url = `${BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice?${params.toString()}`;
+
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      authorization: `Bearer ${token}`,
+      appkey: APP_KEY ?? '',
+      appsecret: APP_SECRET ?? '',
+      tr_id: 'FHKST03010100', // ✅ 주식 일봉 차트 조회 TR ID
+      custtype: 'P',
+    },
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    throw new Error(`[KIS] 일봉 조회 HTTP 에러: ${res.status}`);
+  }
+
+  const data = (await res.json()) as KisDailyApiResponse;
+
+  if (data.rt_cd !== '0') {
+    throw new Error(data.msg1 || `[KIS] 일봉 조회 실패 (rt_cd=${data.rt_cd})`);
+  }
+
+  const output = data.output2;
+  if (!output || output.length === 0) return [];
+
+  // 과거 -> 현재 순서로 종가만 추출하여 반환 (KIS는 최신순으로 줌 -> reverse 필요)
+  // 필요한 만큼(최대 30일치)만 잘라서 씁니다.
+  return output
+    .slice(0, 40) // 넉넉히 40개 가져옴
+    .map((item) => Number(item.stck_clpr))
+    .reverse(); // 배열을 [과거, ..., 오늘] 순서로 뒤집음
+}
+
+// 🟢 [공개 함수] 종목코드만 넣으면 일봉 종가 배열 반환
+export async function getDailyStockHistory(rawCode: string): Promise<number[]> {
+  const code = normalizeStockCode(rawCode);
+  const token = await getKisAccessToken(); // 기존 토큰 로직 재사용 (개꿀!)
+
+  // 날짜 계산 (오늘 ~ 3달 전)
+  const today = new Date();
+  const past = new Date();
+  past.setMonth(today.getMonth() - 3);
+
+  const formatDate = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
+  
+  return requestDailyHistoryWithToken(code, token, formatDate(past), formatDate(today));
+}
