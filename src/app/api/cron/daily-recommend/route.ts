@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     // 2. Gemini 분석 요청
     // ✅ 모델명: gemini-1.5-flash (라이브러리 업데이트 필수!)
     const model = genAI.getGenerativeModel({ 
-        model: "gemini-1.5-flash", 
+        model: "gemini-1.5-flash-latest", 
         generationConfig: { responseMimeType: "application/json" }
     });
 
