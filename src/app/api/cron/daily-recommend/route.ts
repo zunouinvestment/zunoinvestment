@@ -24,9 +24,12 @@ export async function GET(req: NextRequest) {
     }
 
     // 2. Gemini 분석 요청
-    // ✅ 모델명: gemini-1.5-flash (라이브러리 업데이트 필수!)
+    // 🚨 [해결책] 별칭 대신 '구체적인 버전 번호' 사용
+    // gemini-1.5-flash -> gemini-1.5-flash-001 (또는 gemini-1.5-flash-002)
+    // 최신 버전인 'gemini-1.5-flash-8b'도 있지만 001이 가장 호환성이 높습니다.
     const model = genAI.getGenerativeModel({ 
-        model: "gemini-1.5-flash-latest", 
+        model: "gemini-1.5-flash-001", 
+        // JSON 모드 설정 (1.5 모델은 이 설정이 잘 먹힙니다)
         generationConfig: { responseMimeType: "application/json" }
     });
 
@@ -80,14 +83,15 @@ export async function GET(req: NextRequest) {
         telegramMsg += `   💡 ${item.reason_summary}\n\n`;
     }
     
-    // 도메인 주소는 본인의 것으로 수정해주세요
+    // 도메인 주소 수정 필요
     telegramMsg += `👉 [상세 리포트 보기](https://zunoinvestment.vercel.app/ai-recommend)`;
     await sendTelegramMessage(telegramMsg);
 
     return NextResponse.json({ success: true, count: recommendations.length });
 
   } catch (error: any) {
-    console.error("Gemini Error:", error); // 에러 로그 상세 출력
+    console.error("Gemini Error:", error);
+    await sendTelegramMessage(`⚠️ [시스템 오류] Gemini 오류: ${error.message}`);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
