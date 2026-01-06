@@ -9,6 +9,8 @@ const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
+  
+  // 보안 키 확인
   if (searchParams.get('key') !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -23,9 +25,10 @@ export async function GET(req: NextRequest) {
     }
 
     // 2. Gemini 분석 요청
-    // ✅ 모델 변경: gemini-1.5-pro (더 똑똑하고 깊은 분석)
+    // 🚨 [수정됨] 모델명을 가장 안정적인 'gemini-1.5-flash'로 변경
+    // (Pro 모델은 API 키 권한에 따라 404가 뜰 수 있음)
     const model = genAI.getGenerativeModel({ 
-        model: "gemini-1.5-pro", 
+        model: "gemini-1.5-flash", 
         generationConfig: { responseMimeType: "application/json" }
     });
 
@@ -64,7 +67,7 @@ export async function GET(req: NextRequest) {
     const today = new Date().toISOString().split('T')[0];
     await supabaseAdmin.from('stock_ai_recommendations').delete().eq('recommend_date', today);
 
-    let telegramMsg = `🧠 *[Gemini Pro 심층 분석]* (${today})\n\n`;
+    let telegramMsg = `🧠 *[Gemini AI 심층 분석]* (${today})\n\n`;
 
     for (const item of recommendations) {
         await supabaseAdmin.from('stock_ai_recommendations').insert({
@@ -82,7 +85,8 @@ export async function GET(req: NextRequest) {
         telegramMsg += `   💬 ${item.reason_summary}\n\n`;
     }
     
-    telegramMsg += `👉 [상세 리포트 보기](https://당신의도메인/ai-recommend)`;
+    // 도메인 주소 수정 필요 (본인의 실제 도메인 입력)
+    telegramMsg += `👉 [상세 리포트 보기](https://zunoinvestment.vercel.app/ai-recommend)`; 
     await sendTelegramMessage(telegramMsg);
 
     return NextResponse.json({ success: true, count: recommendations.length });
