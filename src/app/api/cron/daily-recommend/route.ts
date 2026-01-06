@@ -10,13 +10,12 @@ const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   
-  // 보안 키 확인
   if (searchParams.get('key') !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
-    // 1. KIS API 데이터 수집 (한국투자증권 토큰 사용)
+    // 1. KIS API 데이터 수집
     const candidates = await fetchOversoldStocks();
 
     if (candidates.length === 0) {
@@ -25,9 +24,10 @@ export async function GET(req: NextRequest) {
     }
 
     // 2. Gemini 분석 요청
-    // ✅ [확인된 모델 사용] 님 계정에서 사용 가능한 최신 고성능 모델
+    // 🚨 [수정됨] Pro 대신 무료 할당량이 넉넉한 'gemini-2.5-flash' 사용
+    // 아까 확인된 리스트에 있던 모델입니다.
     const model = genAI.getGenerativeModel({ 
-        model: "gemini-2.5-pro" 
+        model: "gemini-2.5-flash" 
     });
 
     const prompt = `
@@ -58,15 +58,13 @@ export async function GET(req: NextRequest) {
       ]
     `;
 
-    // 3. 요청 및 응답 처리
     const result = await model.generateContent(prompt);
     const response = await result.response;
     let responseText = response.text();
 
-    // 🚨 안전장치: 혹시 모를 마크다운 기호 제거 (JSON 파싱 에러 방지)
+    // 마크다운 제거
     responseText = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
 
-    // 4. JSON 파싱
     let recommendations;
     try {
         recommendations = JSON.parse(responseText);
@@ -76,11 +74,11 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: "JSON Parse Error" }, { status: 500 });
     }
 
-    // 5. DB 저장 및 알림
+    // 3. DB 저장 및 알림
     const today = new Date().toISOString().split('T')[0];
     await supabaseAdmin.from('stock_ai_recommendations').delete().eq('recommend_date', today);
 
-    let telegramMsg = `🧠 *[Gemini 2.5 Pro 심층분석]* (${today})\n\n`;
+    let telegramMsg = `⚡ *[Gemini 2.5 Flash 추천]* (${today})\n\n`;
 
     for (const item of recommendations) {
         await supabaseAdmin.from('stock_ai_recommendations').insert({
@@ -98,7 +96,7 @@ export async function GET(req: NextRequest) {
         telegramMsg += `   💬 ${item.reason_summary}\n\n`;
     }
     
-    // 도메인 주소 수정 (본인 도메인으로)
+    // 도메인 수정
     telegramMsg += `👉 [상세 리포트 보기](https://zunoinvestment.vercel.app/ai-recommend)`;
     await sendTelegramMessage(telegramMsg);
 
