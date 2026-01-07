@@ -23,10 +23,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ message: 'No candidates found' });
     }
 
-    // 2. Gemini 분석 요청 (gemini-2.5-flash 사용)
-    const model = genAI.getGenerativeModel({ 
-        model: "gemini-2.5-flash" 
-    });
+    // 2. Gemini 분석 요청 (자동 우회 로직 적용)
+    // 우선순위: 2.5 Flash (최신) -> 2.0 Flash (안정적) -> 2.0 Flash Lite (비상용)
+    const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash-001", "gemini-2.0-flash-lite-001"];
+    
+    let result = null;
+    let usedModelName = "";
+    let lastError = null;
 
     const prompt = `
       당신은 30년 경력의 월가 퀀트 투자 전문가입니다.
@@ -56,7 +59,27 @@ export async function GET(req: NextRequest) {
       ]
     `;
 
-    const result = await model.generateContent(prompt);
+    // 모델 순차 시도 (Fallback Loop)
+    for (const modelName of modelsToTry) {
+        try {
+            console.log(`🤖 시도 중인 모델: ${modelName}`);
+            const model = genAI.getGenerativeModel({ model: modelName });
+            const generated = await model.generateContent(prompt);
+            result = generated;
+            usedModelName = modelName;
+            console.log(`✅ 성공: ${modelName}`);
+            break; // 성공하면 반복문 탈출
+        } catch (e: any) {
+            console.warn(`⚠️ ${modelName} 실패 (503/429 등): ${e.message}`);
+            lastError = e;
+            // 실패하면 다음 모델로 넘어감
+        }
+    }
+
+    if (!result) {
+        throw new Error(`모든 AI 모델이 응답하지 않습니다. 마지막 에러: ${lastError?.message}`);
+    }
+
     const response = await result.response;
     let responseText = response.text();
 
@@ -76,8 +99,8 @@ export async function GET(req: NextRequest) {
     const today = new Date().toISOString().split('T')[0];
     await supabaseAdmin.from('stock_ai_recommendations').delete().eq('recommend_date', today);
 
-    // 🚨 [수정됨] Gemini 문구 제거 -> 'AI 심층 분석'으로 변경
-    let telegramMsg = `📈 *[오늘의 AI 심층 분석]* (${today})\n\n`;
+    // 텔레그램 메시지에 어떤 모델이 성공했는지 표시 (디버깅용)
+    let telegramMsg = `📈 *[오늘의 AI 심층 분석]*\nMODE: ${usedModelName.replace('models/', '')}\n📅 ${today}\n\n`;
 
     for (const item of recommendations) {
         await supabaseAdmin.from('stock_ai_recommendations').insert({
@@ -95,11 +118,10 @@ export async function GET(req: NextRequest) {
         telegramMsg += `   💬 ${item.reason_summary}\n\n`;
     }
     
-    // 🚨 [수정됨] 링크 문구 변경
-    telegramMsg += `👉 [전체 리포트 & 과거기록 보기](https://zunoinv.vercel.app/ai-recommend)`;
+    telegramMsg += `👉 [전체 리포트 & 과거기록 보기](https://zunoinvestment.vercel.app/ai-recommend)`;
     await sendTelegramMessage(telegramMsg);
 
-    return NextResponse.json({ success: true, count: recommendations.length });
+    return NextResponse.json({ success: true, count: recommendations.length, model: usedModelName });
 
   } catch (error: any) {
     console.error("Gemini Error:", error);
