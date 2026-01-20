@@ -19,16 +19,25 @@ export default function ExpenseReportPage() {
   const [expenses, setExpenses] = useState<ExpenseRecord[]>([])
   const [loading, setLoading] = useState(true)
   
-  // 초기값: 현재 날짜 기준 전월
+  // ✅ [수정] 초기값 설정 (21일 기준 자동 판별)
   const [selectedYear, setSelectedYear] = useState<string>(() => {
     const now = new Date();
-    return now.getMonth() === 0 ? (now.getFullYear() - 1).toString() : now.getFullYear().toString();
+    // 21일 전이면 지난달 결제분, 21일 이후면 이번달 결제분
+    if (now.getDate() < 21) {
+        // 지난달 연도 계산 (1월이면 작년)
+        return now.getMonth() === 0 ? (now.getFullYear() - 1).toString() : now.getFullYear().toString();
+    }
+    return now.getFullYear().toString();
   })
   
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     const now = new Date();
-    const prevMonth = now.getMonth() === 0 ? 12 : now.getMonth();
-    return prevMonth.toString().padStart(2, '0');
+    // 21일 전이면 지난달, 21일 이후면 이번달
+    if (now.getDate() < 21) {
+        const prevMonth = now.getMonth() === 0 ? 12 : now.getMonth();
+        return prevMonth.toString().padStart(2, '0');
+    }
+    return (now.getMonth() + 1).toString().padStart(2, '0');
   })
   
   const [reportMode, setReportMode] = useState<'transaction' | 'payment'>('payment')
@@ -131,7 +140,7 @@ export default function ExpenseReportPage() {
                 chartData = Object.entries(dateMap).map(([date, val]) => {
                     const [_, m, d] = date.split('-');
                     return {
-                        name: `${Number(m)}/${Number(d)}`, // 예: 12/21
+                        name: `${Number(m)}/${Number(d)}`,
                         value: val,
                         dateStr: date
                     };
@@ -229,19 +238,17 @@ export default function ExpenseReportPage() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-                {/* 2. 지출 추이 차트 (모바일 최적화: 한 화면 보기 + Y축 확보) */}
+                {/* 2. 지출 추이 차트 (최적화) */}
                 <Card className="min-h-[350px] flex flex-col">
                     <h3 className="font-bold text-base md:text-lg mb-4 flex items-center gap-2">
                         <TrendingUp className="w-4 h-4 md:w-5 md:h-5 text-blue-500"/> 
                         {selectedMonth === 'ALL' ? '월별 지출 추이' : reportMode === 'payment' ? `${selectedMonth}월 결제건 소비 분포` : `${selectedMonth}월 일별 소비 추이`}
                     </h3>
-                    <div className="flex-1 w-full text-xs">
-                        <div className="w-full h-[280px]">
+                    <div className="flex-1 w-full text-xs overflow-x-auto pb-2 scrollbar-hide">
+                        <div style={{ minWidth: stats.chartData.length > 10 ? '600px' : '100%', height: '280px' }}>
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={stats.chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                    
-                                    {/* ✅ X축: minTickGap으로 자동 생략, preserveStartEnd로 양 끝 유지 */}
                                     <XAxis 
                                         dataKey="name" 
                                         tick={{fontSize: 10, fill: '#64748b'}} 
@@ -250,8 +257,6 @@ export default function ExpenseReportPage() {
                                         interval="preserveStartEnd" 
                                         minTickGap={30}
                                     />
-                                    
-                                    {/* ✅ Y축: width를 60으로 늘려 '100만' 같은 글자 잘림 방지 */}
                                     <YAxis 
                                         tick={{fontSize: 10, fill: '#64748b'}} 
                                         axisLine={false} 
@@ -259,7 +264,6 @@ export default function ExpenseReportPage() {
                                         tickFormatter={(val) => val === 0 ? '0' : `${val/10000}만`} 
                                         width={60} 
                                     />
-                                    
                                     <RechartsTooltip 
                                         cursor={{fill: '#f1f5f9'}}
                                         formatter={(val: number) => [val.toLocaleString() + '원', '지출액']}

@@ -191,46 +191,50 @@ export default function ExpenseTrackerPage() {
 
   const [filterMode, setFilterMode] = useState<'transaction' | 'payment'>('payment')
   
-  // 날짜 초기값
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
+  // 날짜 초기값 (로컬 날짜 기준)
+  const toISODate = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const [startDate, setStartDate] = useState(toISODate(new Date(new Date().getFullYear(), new Date().getMonth(), 1)))
+  const [endDate, setEndDate] = useState(toISODate(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0)))
   
+  // ✅ [추가] 결제월 선택용 State (YYYY-MM)
+  const [paymentMonth, setPaymentMonth] = useState(new Date().toISOString().slice(0, 7))
+
   const [filterCard, setFilterCard] = useState('ALL')
   const [filterCategory, setFilterCategory] = useState('ALL')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // ✅ [수정] 필터 모드 변경 시 날짜 자동 세팅 로직
+  // ✅ [수정] 필터 모드 또는 월 변경 시 날짜 자동 세팅
   useEffect(() => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth(); // 0-indexed (0: Jan)
-
-    // 날짜 포맷 함수 (YYYY-MM-DD) - 로컬 타임존 기준
-    const toISODate = (d: Date) => {
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        return `${y}-${m}-${day}`;
-    };
-
     if (filterMode === 'transaction') {
-        // 소비일 기준: 전월 1일 ~ 전월 말일
-        const start = new Date(year, month - 1, 1);
-        const end = new Date(year, month, 0); // 이번 달 0일 = 지난 달 마지막 날
+        // 소비일 기준: 현재 선택된 startDate/endDate 유지하거나 기본값(이번 달)으로 리셋?
+        // 사용자가 날짜를 자유롭게 바꾸므로 여기서는 강제 리셋하지 않고, 
+        // 모드 전환 시에만 기본값(이번달) 세팅하는게 자연스러움.
+        // 하지만 편의를 위해 모드 변경 시 이번달 1일~말일로 세팅
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), 1);
+        const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
         setStartDate(toISODate(start));
         setEndDate(toISODate(end));
     } else {
-        // 결제일 기준: 전월 21일 ~ 당월 20일
-        const start = new Date(year, month - 1, 21);
-        const end = new Date(year, month, 20);
-        setStartDate(toISODate(start));
-        setEndDate(toISODate(end));
+        // 결제일 기준: 선택된 월의 21일로 고정
+        // paymentMonth가 '2025-12'라면 -> 2025-12-21
+        if (paymentMonth) {
+            const targetDate = `${paymentMonth}-21`;
+            setStartDate(targetDate);
+            setEndDate(targetDate);
+        }
     }
-  }, [filterMode]) // filterMode가 변경될 때마다 실행
+  }, [filterMode, paymentMonth]) 
 
   const loadData = async () => {
-    if (!startDate || !endDate) return; // 날짜 초기화 전에는 실행 방지
+    if (!startDate || !endDate) return;
 
     setLoading(true)
     try {
@@ -329,12 +333,28 @@ export default function ExpenseTrackerPage() {
                         <option value="transaction">소비일</option>
                     </select>
                 </div>
+                
+                {/* ✅ [수정] 모드에 따라 날짜 입력 UI 변경 */}
                 <div className="flex items-center gap-1 md:gap-2 w-full md:w-auto">
                     <CalendarIcon className="w-3 h-3 md:w-4 md:h-4 text-gray-500 hidden md:block"/>
-                    <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border rounded p-1 text-gray-600 outline-none focus:border-black flex-1 md:flex-none"/>
-                    <span className="text-gray-400">~</span>
-                    <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border rounded p-1 text-gray-600 outline-none focus:border-black flex-1 md:flex-none"/>
+                    {filterMode === 'payment' ? (
+                        // 결제일 모드: 월 선택기 (21일 자동 타겟팅)
+                        <input 
+                            type="month" 
+                            value={paymentMonth} 
+                            onChange={(e) => setPaymentMonth(e.target.value)} 
+                            className="border rounded p-1 text-gray-600 outline-none focus:border-black font-bold"
+                        />
+                    ) : (
+                        // 소비일 모드: 기존 날짜 범위 선택기
+                        <>
+                            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border rounded p-1 text-gray-600 outline-none focus:border-black flex-1 md:flex-none"/>
+                            <span className="text-gray-400">~</span>
+                            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border rounded p-1 text-gray-600 outline-none focus:border-black flex-1 md:flex-none"/>
+                        </>
+                    )}
                 </div>
+
                 <div className="flex items-center gap-1 md:gap-2 ml-auto w-1/2 md:w-auto"><select className="border rounded p-1 outline-none focus:border-black w-full md:w-[120px]" value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}><option value="ALL">전체 카테고리</option>{parentCategories.map(p => <option key={p} value={p}>{p}</option>)}</select></div>
                 <div className="flex items-center gap-1 md:gap-2 w-[45%] md:w-auto"><select className="border rounded p-1 outline-none focus:border-black w-full md:w-[120px]" value={filterCard} onChange={(e) => setFilterCard(e.target.value)}><option value="ALL">전체 카드</option>{Array.from(new Set(expenses.map(e => e.card_company))).map(c => <option key={c} value={c}>{c}</option>)}</select></div>
             </div>
