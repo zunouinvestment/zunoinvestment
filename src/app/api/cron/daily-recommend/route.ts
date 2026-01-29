@@ -23,21 +23,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ message: 'No candidates found' });
     }
 
-    // ✅ [빌드 오류 수정 완료]
-    // TypeScript 인터페이스에 맞춰 속성명 수정 (closePrice -> price)
-    // disparity(이격도)는 타입에 없으므로 제거하고, 대신 changeRate(등락률) 추가
+    // ✅ [데이터 최적화] AI 토큰 절약을 위해 핵심 데이터만 전송
     const optimizedCandidates = candidates.map(item => ({
         code: item.code,
         name: item.name,
-        price: item.price,       // 수정됨 (closePrice -> price)
-        change: item.changeRate, // 추가됨 (등락률)
-        rsi: item.rsi,           // RSI
-    })).slice(0, 30); // 상위 30개 제한
+        price: item.price,       
+        change: item.changeRate, 
+        rsi: item.rsi,           
+    })).slice(0, 30); // 상위 30개로 제한
 
-    // 2. Gemini 분석 요청
-    // 1순위: 2.5 Flash (최신)
-    // 2순위: 2.5 Flash Lite (신규 경량)
-    // 3순위: 2.0 Flash Lite (구버전 경량)
+    // 2. Gemini 분석 요청 (모델 우회 전략)
     const modelsToTry = [
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite", 
@@ -60,7 +55,7 @@ export async function GET(req: NextRequest) {
       
       [필수 출력 규칙]
       1. 결과는 오직 **JSON 배열** 형식으로만 출력하세요.
-      2. 마크다운 기호(\`\`\`json)나 서론, 결론 같은 사족을 절대 붙이지 마세요.
+      2. 마크다운 기호(\`\`\`json)나 설명, 서론, 결론을 절대 포함하지 마세요.
       3. 분석 내용은 한국어로 작성하며, 투자자를 설득할 수 있는 날카로운 통찰력을 담으세요.
 
       [JSON 예시]
@@ -76,16 +71,16 @@ export async function GET(req: NextRequest) {
       ]
     `;
 
-    // 모델 순차 시도 (Fallback Loop)
+    // 모델 순차 시도
     for (const modelName of modelsToTry) {
         try {
             console.log(`🤖 시도 중인 모델: ${modelName}`);
-            // 모델 설정에 '응답 토큰 제한'을 걸어서 불필요한 긴 생성을 막음
             const model = genAI.getGenerativeModel({ 
                 model: modelName,
                 generationConfig: {
-                    maxOutputTokens: 2000, // 출력 토큰 제한
-                    temperature: 0.7,
+                    responseMimeType: "application/json", // JSON 모드 강제 (지원하는 모델의 경우)
+                    maxOutputTokens: 2000, 
+                    temperature: 0.5, // 창의성 낮춤 -> 포맷 준수율 높임
                 }
             });
             
@@ -101,15 +96,27 @@ export async function GET(req: NextRequest) {
     }
 
     if (!result) {
-        await sendTelegramMessage(`⚠️ [AI 실패] 모든 모델 할당량 초과/오류. (${lastError?.message?.slice(0, 50)}...)`);
+        await sendTelegramMessage(`⚠️ [AI 실패] 모든 모델 할당량/오류. (${lastError?.message?.slice(0, 50)}...)`);
         throw new Error(`모든 AI 모델 응답 불가. 마지막 에러: ${lastError?.message}`);
     }
 
     const response = await result.response;
     let responseText = response.text();
 
-    // 마크다운 제거
+    // ✅ [강력한 파싱 로직 적용]
+    // 1. 마크다운 기호 제거
     responseText = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
+    
+    // 2. JSON 배열 부분만 정확히 추출 (앞뒤 사족 제거)
+    const firstBracket = responseText.indexOf('[');
+    const lastBracket = responseText.lastIndexOf(']');
+    
+    if (firstBracket !== -1 && lastBracket !== -1) {
+        responseText = responseText.substring(firstBracket, lastBracket + 1);
+    } else {
+        // 배열을 못 찾았으면 에러 처리
+        throw new Error("Invalid JSON structure: No array found");
+    }
 
     let recommendations;
     try {
@@ -117,16 +124,14 @@ export async function GET(req: NextRequest) {
     } catch (e) {
         console.error("JSON Parse Error:", responseText);
         await sendTelegramMessage(`⚠️ [시스템] AI 응답 파싱 실패. 원본: ${responseText.slice(0, 50)}...`);
-        return NextResponse.json({ error: "JSON Parse Error" }, { status: 500 });
+        return NextResponse.json({ error: "JSON Parse Error", raw: responseText }, { status: 500 });
     }
 
     // 3. DB 저장 및 알림
     const today = new Date().toISOString().split('T')[0];
     await supabaseAdmin.from('stock_ai_recommendations').delete().eq('recommend_date', today);
 
-    // 모델명 깔끔하게 정리
     const cleanModelName = usedModelName.replace('models/', '').replace('gemini-', '');
-
     let telegramMsg = `📈 *[오늘의 AI 심층 분석]*\n🤖 Model: ${cleanModelName}\n📅 ${today}\n\n`;
 
     for (const item of recommendations) {
