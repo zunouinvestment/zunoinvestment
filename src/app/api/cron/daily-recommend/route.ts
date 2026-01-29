@@ -23,23 +23,25 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ message: 'No candidates found' });
     }
 
-    // ✅ [핵심 최적화] AI에게 보낼 데이터 다이어트 (토큰 절약)
-    // 불필요한 필드(시가, 고가, 저가 등)를 제거하고 핵심만 추림
+    // ✅ [빌드 오류 수정 완료]
+    // TypeScript 인터페이스에 맞춰 속성명 수정 (closePrice -> price)
+    // disparity(이격도)는 타입에 없으므로 제거하고, 대신 changeRate(등락률) 추가
     const optimizedCandidates = candidates.map(item => ({
         code: item.code,
         name: item.name,
-        price: item.closePrice, // 현재가
-        rsi: item.rsi,          // RSI 지표
-        gap: item.disparity,    // 이격도
-        // 필요한 경우 여기에만 추가 (예: 거래량 급증 여부 등)
-    })).slice(0, 30); // 상위 30개로 제한하여 토큰 폭탄 방지
+        price: item.price,       // 수정됨 (closePrice -> price)
+        change: item.changeRate, // 추가됨 (등락률)
+        rsi: item.rsi,           // RSI
+    })).slice(0, 30); // 상위 30개 제한
 
-    // 2. Gemini 분석 요청 (모델 우회 전략 수정)
-    // 현재 무료 쿼터가 가장 넉넉한 'Lite' 모델을 최우선으로 사용
+    // 2. Gemini 분석 요청
+    // 1순위: 2.5 Flash (최신)
+    // 2순위: 2.5 Flash Lite (신규 경량)
+    // 3순위: 2.0 Flash Lite (구버전 경량)
     const modelsToTry = [
-        "gemini-2.5-flash-lite",     // 1순위: 최신 경량 (무료 쿼터 가장 많음)
-        "gemini-2.0-flash-lite-001", // 2순위: 구버전 경량 (안정적)
-        "gemini-2.5-flash"           // 3순위: 성능형 (쿼터 적음, 비상용)
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite", 
+        "gemini-2.0-flash-lite-001"
     ];
     
     let result = null;
@@ -69,7 +71,7 @@ export async function GET(req: NextRequest) {
           "price": 70000,
           "target_price": 73500,
           "reason_summary": "RSI 28 진입 및 반도체 업황 턴어라운드 기대",
-          "ai_analysis_detail": "현재 RSI 28로 과매도 구간에 진입했습니다. 과거 패턴 상 이격도 95% 미만에서 기술적 반등이 잦았으며..."
+          "ai_analysis_detail": "현재 RSI 28로 과매도 구간에 진입했습니다. 최근 등락률을 고려할 때 기술적 반등이 유력해 보입니다..."
         }
       ]
     `;
@@ -95,12 +97,11 @@ export async function GET(req: NextRequest) {
         } catch (e: any) {
             console.warn(`⚠️ ${modelName} 실패: ${e.message}`);
             lastError = e;
-            // 429 에러 발생 시 잠시 대기 후 다음 모델 시도 (선택 사항)
         }
     }
 
     if (!result) {
-        await sendTelegramMessage(`⚠️ [AI 실패] 할당량 초과. 오후 5시 이후 시도해주세요. (${lastError?.message?.slice(0, 50)}...)`);
+        await sendTelegramMessage(`⚠️ [AI 실패] 모든 모델 할당량 초과/오류. (${lastError?.message?.slice(0, 50)}...)`);
         throw new Error(`모든 AI 모델 응답 불가. 마지막 에러: ${lastError?.message}`);
     }
 
