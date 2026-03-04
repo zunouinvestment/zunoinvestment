@@ -1,10 +1,11 @@
 // src/app/api/cron/market-insight/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import yahooFinance from 'yahoo-finance2';
+import YahooFinance from 'yahoo-finance2'; // ❌ 괄호가 있음
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { sendTelegramMessage } from '@/lib/telegram';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+const yahooFinance = new YahooFinance(); // ✅ 2. 이 줄을 추가하여 실행 준비를 시킴
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
 export async function GET(req: NextRequest) {
