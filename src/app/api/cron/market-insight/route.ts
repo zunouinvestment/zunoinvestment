@@ -17,11 +17,18 @@ export async function GET(req: NextRequest) {
   try {
     console.log("🚀 [Market Insight] 데이터 수집 시작...");
 
-    // 1. 야후 파이낸스에서 핵심 지표 수집
-    // 티커 심볼: 환율(KRW=X), 달러인덱스(DX-Y.NYB), 나스닥(^IXIC), S&P500(^GSPC), 필라델피아반도체(^SOX), 미10년물(^TNX), VIX(^VIX)
+// 1. 야후 파이낸스에서 핵심 지표 수집
     const tickers = ['KRW=X', 'DX-Y.NYB', '^IXIC', '^GSPC', '^SOX', '^TNX', '^VIX'];
     const quotes = await Promise.all(
-        tickers.map(ticker => yahooFinance.quote(ticker).catch(() => null))
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tickers.map(async (ticker): Promise<any> => {
+            try {
+                return await yahooFinance.quote(ticker);
+            } catch (e) {
+                console.warn(`Failed to fetch ${ticker}:`, e);
+                return null;
+            }
+        })
     );
 
     // 데이터 정리 (수집 실패 시 0으로 처리)
