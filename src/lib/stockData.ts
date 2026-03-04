@@ -40,10 +40,10 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export async function fetchOversoldStocks() {
   const candidates = [];
-  
+
   // KIS API 호출 제한(초당 20건)과 Vercel 타임아웃을 고려하여
   // 상위 30개만 우선 분석합니다.
-  const targetList = KOSPI_200.slice(0, 30); 
+  const targetList = KOSPI_200.slice(0, 30);
 
   console.log(`🚀 [KIS] 총 ${targetList.length}개 종목 데이터 수집 시작...`);
 
@@ -51,14 +51,14 @@ export async function fetchOversoldStocks() {
     try {
       // ✅ KIS API로 일봉 데이터 가져오기 (이미 인증된 함수 사용)
       const closes = await getDailyStockHistory(stock.code);
-      
+
       // 데이터가 충분하지 않으면 패스
       if (!closes || closes.length < 20) {
         continue;
       }
 
       const currentPrice = closes[closes.length - 1];
-      
+
       // RSI 계산
       const rsi = calculateRSI(closes);
 
@@ -80,7 +80,7 @@ export async function fetchOversoldStocks() {
       // 실패해도 다음 종목 계속 진행
       continue;
     }
-    
+
     // KIS API 과부하 방지를 위해 0.1초 대기
     await delay(100);
   }

@@ -17,7 +17,8 @@ import {
   FileSpreadsheet,
   Wallet,
   PieChart,
-  Bot, // ✅ Bot 아이콘 추가
+  Bot,
+  Globe, // ✅ 추가된 아이콘
 } from 'lucide-react'
 
 type NavItem = { name: string; href: string; icon: React.ReactNode }
@@ -33,7 +34,8 @@ const navMenu: NavCategory[] = [
   {
     title: 'Investment',
     items: [
-      // ✅ AI Recommend 메뉴 추가 (Now 위)
+      // ✅ AI Recommend 바로 위에 Market Insight 추가
+      { name: 'Market Insight', href: '/market-insight', icon: <Globe className="w-4 h-4" /> },
       { name: 'AI Recommend', href: '/ai-recommend', icon: <Bot className="w-4 h-4" /> },
       { name: 'Now', href: '/now', icon: <BarChart3 className="w-4 h-4" /> },
       { name: 'Strategy', href: '/strategy', icon: <FileSpreadsheet className="w-4 h-4" /> },
