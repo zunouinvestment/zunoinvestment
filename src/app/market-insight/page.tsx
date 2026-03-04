@@ -21,20 +21,26 @@ interface MarketData {
 
 export default function MarketInsightPage() {
   const [data, setData] = useState<MarketData | null>(null);
+  const [prevData, setPrevData] = useState<MarketData | null>(null); // ✅ 어제 데이터 상태 추가
   const [loading, setLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
+    // ✅ 최근 데이터 2건(오늘, 어제) 불러오기
     const { data: latestData, error } = await supabase
       .from('market_insights')
       .select('*')
       .order('target_date', { ascending: false })
-      .limit(1)
-      .single();
+      .limit(2);
 
-    if (!error && latestData) {
-      setData(latestData);
+    if (!error && latestData && latestData.length > 0) {
+      setData(latestData[0]); // 가장 최신(오늘)
+      if (latestData.length > 1) {
+        setPrevData(latestData[1]); // 두 번째로 최신(어제)
+      } else {
+        setPrevData(null);
+      }
     }
     setLoading(false);
   };
@@ -135,54 +141,70 @@ export default function MarketInsightPage() {
             </div>
           </div>
 
-          {/* 2. 매크로 지표 그리드 (툴팁 추가됨) */}
+          {/* 2. 매크로 지표 그리드 (전일비 표기 추가됨) */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <MetricCard 
               title="원/달러 환율" 
-              value={`${data.usd_krw.toLocaleString()}원`} 
+              value={`${data.usd_krw.toLocaleString(undefined, { maximumFractionDigits: 1 })}원`} 
               icon={<DollarSign className="w-5 h-5 text-green-500" />} 
               description="원화 대비 달러의 가치입니다. 환율이 급등하면 외국인 투자자들이 환차손을 피하기 위해 한국 주식을 팔고 나갈 확률이 높아져 증시에 악재로 작용합니다."
+              currentNum={data.usd_krw}
+              prevNum={prevData?.usd_krw}
             />
             <MetricCard 
               title="달러 인덱스" 
               value={data.dxy.toFixed(2)} 
               icon={<Globe className="w-5 h-5 text-blue-500" />} 
               description="세계 주요 6개국 통화 대비 달러화의 평균적인 가치를 보여줍니다. 달러가 강세(상승)일수록 신흥국(한국 등) 증시의 자본 이탈 우려가 커집니다."
+              currentNum={data.dxy}
+              prevNum={prevData?.dxy}
             />
             <MetricCard 
               title="나스닥" 
-              value={data.nasdaq.toLocaleString()} 
+              value={data.nasdaq.toLocaleString(undefined, { maximumFractionDigits: 2 })} 
               icon={<TrendingUp className="w-5 h-5 text-red-500" />} 
               description="미국의 벤처기업과 기술주(빅테크) 중심의 주가지수입니다. 한국 증시에는 IT, 배터리, 바이오 등 성장주 섹터에 직접적인 방향성을 제시합니다."
+              currentNum={data.nasdaq}
+              prevNum={prevData?.nasdaq}
             />
             <MetricCard 
               title="S&P 500" 
-              value={data.sp500.toLocaleString()} 
+              value={data.sp500.toLocaleString(undefined, { maximumFractionDigits: 2 })} 
               icon={<Activity className="w-5 h-5 text-purple-500" />} 
               description="미국을 대표하는 500개 대형 기업의 주가지수입니다. 글로벌 증시와 경제의 전반적인 건강 상태를 보여주는 가장 중요한 나침반입니다."
+              currentNum={data.sp500}
+              prevNum={prevData?.sp500}
             />
             <MetricCard 
               title="필라델피아 반도체" 
-              value={data.sox.toLocaleString()} 
+              value={data.sox.toLocaleString(undefined, { maximumFractionDigits: 2 })} 
               icon={<TrendingUp className="w-5 h-5 text-orange-500" />} 
               description="미국 주요 반도체 기업 30개의 주가를 지수화한 것입니다. 코스피 시가총액 비중이 압도적인 삼성전자와 SK하이닉스의 내일 주가를 예측하는 강력한 선행지표입니다."
+              currentNum={data.sox}
+              prevNum={prevData?.sox}
             />
             <MetricCard 
               title="미 국채 10년물" 
               value={`${data.us10y.toFixed(3)}%`} 
               icon={<Activity className="w-5 h-5 text-gray-500" />} 
               description="글로벌 장기 금리의 벤치마크입니다. 금리가 오르면 주식 대신 안전한 국채에 투자하려는 심리가 커져 주식 시장, 특히 기술주에 악재로 작용합니다."
+              currentNum={data.us10y}
+              prevNum={prevData?.us10y}
+              isPoint={true} // 등락률 대신 %p 로 표기
             />
             <MetricCard 
               title="VIX (공포지수)" 
               value={data.vix.toFixed(2)} 
               icon={<TrendingDown className="w-5 h-5 text-red-600" />} 
               description="S&P 500 지수의 향후 30일간 변동성에 대한 시장의 기대치입니다. 보통 20을 넘으면 시장이 불안정함을 뜻하며, 30을 넘으면 극심한 공포 상태를 의미합니다."
+              currentNum={data.vix}
+              prevNum={prevData?.vix}
+              isPoint={true} // 등락률 대신 p 로 표기
             />
           </div>
 
           {/* 3. AI 상세 리포트 */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 mt-6">
             <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
               <Bot className="w-5 h-5 text-blue-600" />
               AI 매크로 심층 분석
@@ -199,31 +221,66 @@ export default function MarketInsightPage() {
   );
 }
 
-// 지표 카드 컴포넌트 (툴팁 기능 추가)
+// ✅ 지표 카드 컴포넌트 (전일비 계산 및 렌더링 추가)
 function MetricCard({ 
   title, 
   value, 
   icon, 
-  description 
+  description,
+  currentNum,
+  prevNum,
+  isPoint = false
 }: { 
-  title: string, 
-  value: string | number, 
-  icon: React.ReactNode, 
-  description?: string 
+  title: string; 
+  value: string | number; 
+  icon: React.ReactNode; 
+  description?: string;
+  currentNum?: number;
+  prevNum?: number;
+  isPoint?: boolean;
 }) {
+  
+  // 전일비 렌더링 함수
+  const renderDifference = () => {
+    if (currentNum === undefined || prevNum === undefined || prevNum === 0) return null;
+
+    const diff = currentNum - prevNum;
+    const diffRate = (diff / prevNum) * 100;
+    
+    if (diff === 0) {
+      return <div className="text-sm font-medium text-gray-400 mt-1">- (0.00%)</div>;
+    }
+
+    const isUp = diff > 0;
+    // 상승은 빨강, 하락은 파랑 (한국 주식 시장 표준)
+    const colorClass = isUp ? 'text-red-500' : 'text-blue-500';
+    const sign = isUp ? '▲' : '▼';
+    
+    const diffStr = Math.abs(diff).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    
+    // 금리나 VIX는 %변동 대신 단순 포인트 차이(p)로 표기
+    const rateStr = isPoint 
+      ? `${Math.abs(diff).toFixed(2)}p` 
+      : `${Math.abs(diffRate).toFixed(2)}%`;
+
+    return (
+      <div className={`text-[13px] sm:text-sm font-medium mt-1 ${colorClass}`}>
+        {sign} {diffStr} <span className="text-xs sm:text-[13px] opacity-80">({isUp ? '+' : '-'}{rateStr})</span>
+      </div>
+    );
+  };
+
   return (
-    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-2 relative group">
+    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-1.5 relative group">
       <div className="flex items-center gap-1.5 text-sm text-gray-500 font-medium">
         {icon}
-        <span>{title}</span>
+        <span className="truncate">{title}</span>
         {description && (
           <div className="relative flex items-center">
             <Info className="w-3.5 h-3.5 text-gray-400 cursor-help hover:text-blue-500 transition-colors" />
-            {/* 툴팁 (마우스 호버 시 표시) */}
             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-56 sm:w-64 p-3 bg-gray-800 text-white text-[13px] leading-relaxed rounded-lg shadow-xl z-10 font-normal opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
               <div className="mb-1 font-semibold text-blue-300">{title}란?</div>
               {description}
-              {/* 아래쪽 화살표(꼬리) */}
               <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
             </div>
           </div>
@@ -232,6 +289,8 @@ function MetricCard({
       <div className="text-xl md:text-2xl font-bold text-gray-900 truncate">
         {value}
       </div>
+      {/* 전일비 출력 영역 */}
+      {renderDifference()}
     </div>
   );
 }
