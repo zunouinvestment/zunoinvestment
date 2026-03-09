@@ -10,55 +10,67 @@ const yahooFinance = new YahooFinance();
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  
-  if (searchParams.get('key') !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+    const { searchParams } = new URL(req.url);
 
-  try {
-    console.log("🚀 [Market Insight] 다채로운 데이터 및 뉴스 수집 시작...");
-
-    // 1. 야후 파이낸스에서 10가지 핵심 지표 수집 (원유, 금, 비트코인 추가)
-    const tickers = ['KRW=X', 'DX-Y.NYB', '^IXIC', '^GSPC', '^SOX', '^TNX', '^VIX', 'CL=F', 'GC=F', 'BTC-USD'];
-    const quotes = await Promise.all(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        tickers.map(async (ticker): Promise<any> => {
-            try { return await yahooFinance.quote(ticker); } 
-            catch (e) { return null; }
-        })
-    );
-
-    const data = {
-        usd_krw: quotes[0]?.regularMarketPrice || 0,
-        dxy: quotes[1]?.regularMarketPrice || 0,
-        nasdaq: quotes[2]?.regularMarketPrice || 0,
-        sp500: quotes[3]?.regularMarketPrice || 0,
-        sox: quotes[4]?.regularMarketPrice || 0,
-        us10y: quotes[5]?.regularMarketPrice || 0,
-        vix: quotes[6]?.regularMarketPrice || 0,
-        wti: quotes[7]?.regularMarketPrice || 0,      // 원유
-        gold: quotes[8]?.regularMarketPrice || 0,     // 금
-        bitcoin: quotes[9]?.regularMarketPrice || 0,  // 비트코인
-    };
-
-    if (data.usd_krw === 0 && data.nasdaq === 0) throw new Error("주요 지표 수집 실패");
-
-    // 2. 네이버 뉴스 API (검색어 다각화로 더 풍부한 정성적 데이터 확보)
-    let newsHeadlines = "";
-    try {
-        // 매크로 경제와 지정학적 이슈를 동시에 긁어오기
-        const newsItems = await fetchNaverNewsByKeyword("글로벌 경제 OR 미국 연준 금리 OR 지정학적 위기 OR 코스피 시황", { 
-            display: 10, 
-            sort: 'sim' 
-        });
-        newsHeadlines = newsItems.map(item => `- ${item.title.replace(/<[^>]*>?/gm, '').replace(/&quot;/g, '"')}`).join('\n');
-    } catch (e) {
-        newsHeadlines = "최신 뉴스를 불러오지 못했습니다.";
+    if (searchParams.get('key') !== process.env.CRON_SECRET) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // 3. AI 프롬프트 극한 고도화 (뻔한 소리 금지, 입체적 분석 강제)
-    const prompt = `
+    try {
+        console.log("🚀 [Market Insight] 다채로운 데이터 및 뉴스 수집 시작...");
+
+        // 1. 야후 파이낸스에서 10가지 핵심 지표 수집 (원유, 금, 비트코인 추가)
+        const tickers = ['KRW=X', 'DX-Y.NYB', '^IXIC', '^GSPC', '^SOX', '^TNX', '^VIX', 'CL=F', 'GC=F', 'BTC-USD'];
+        const quotes = await Promise.all(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            tickers.map(async (ticker): Promise<any> => {
+                try { return await yahooFinance.quote(ticker); }
+                catch (e) { return null; }
+            })
+        );
+
+        const data = {
+            usd_krw: quotes[0]?.regularMarketPrice || 0,
+            dxy: quotes[1]?.regularMarketPrice || 0,
+            nasdaq: quotes[2]?.regularMarketPrice || 0,
+            sp500: quotes[3]?.regularMarketPrice || 0,
+            sox: quotes[4]?.regularMarketPrice || 0,
+            us10y: quotes[5]?.regularMarketPrice || 0,
+            vix: quotes[6]?.regularMarketPrice || 0,
+            wti: quotes[7]?.regularMarketPrice || 0,      // 원유
+            gold: quotes[8]?.regularMarketPrice || 0,     // 금
+            bitcoin: quotes[9]?.regularMarketPrice || 0,  // 비트코인
+        };
+
+        if (data.usd_krw === 0 && data.nasdaq === 0) throw new Error("주요 지표 수집 실패");
+
+        // 2. 네이버 뉴스 API (과거 기사 차단 및 최신 24시간 기사만 필터링)
+        let newsHeadlines = "";
+        try {
+            // 넉넉하게 15개를 '최신순(date)'으로 가져옴
+            const newsItems = await fetchNaverNewsByKeyword("글로벌 경제 OR 미국 연준 금리 OR 지정학적 위기 OR 코스피 시황", {
+                display: 15,
+                sort: 'date' // ✅ 'sim'(정확도순)에서 'date'(최신순)으로 변경
+            });
+
+            // ✅ 24시간 이내에 작성된 기사만 걸러내는 로직 (과거 리스크 완벽 차단)
+            const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+            const recentNews = newsItems
+                .filter(item => new Date(item.pubDate) >= yesterday)
+                .slice(0, 10); // 필터링된 것 중 상위 10개만 추출
+
+            if (recentNews.length > 0) {
+                newsHeadlines = recentNews.map(item => `- ${item.title.replace(/<[^>]*>?/gm, '').replace(/&quot;/g, '"')}`).join('\n');
+            } else {
+                newsHeadlines = "최근 24시간 내 관련 주요 뉴스가 없습니다.";
+            }
+        } catch (e) {
+            console.warn("뉴스 수집 실패:", e);
+            newsHeadlines = "최신 뉴스를 불러오지 못했습니다.";
+        }
+
+        // 3. AI 프롬프트 극한 고도화 (뻔한 소리 금지, 입체적 분석 강제)
+        const prompt = `
       당신은 30년 경력의 월스트리트 수석 매크로 전략가입니다. 매일 똑같은 뻔한 시황을 읽어주는 것을 가장 혐오하며, 군중이 보지 못하는 뉴스 이면의 '진짜 내러티브'와 '자금의 이동(Money Move)'을 포착해내는 능력이 탁월합니다.
 
       [오늘의 핵심 매크로 지표 (정량적)]
@@ -83,41 +95,41 @@ export async function GET(req: NextRequest) {
       }
     `;
 
-    const model = genAI.getGenerativeModel({ 
-        model: "gemini-2.5-flash",
-        generationConfig: { responseMimeType: "application/json", temperature: 0.7 } // 뻔한 소리를 줄이기 위해 창의성(온도) 대폭 상향
-    });
+        const model = genAI.getGenerativeModel({
+            model: "gemini-2.5-flash",
+            generationConfig: { responseMimeType: "application/json", temperature: 0.7 } // 뻔한 소리를 줄이기 위해 창의성(온도) 대폭 상향
+        });
 
-    const generated = await model.generateContent(prompt);
-    let cleanText = generated.response.text().replace(/```json/gi, "").replace(/```/g, "").trim();
-    
-    const firstBrace = cleanText.indexOf('{');
-    const lastBrace = cleanText.lastIndexOf('}');
-    if (firstBrace !== -1 && lastBrace !== -1) cleanText = cleanText.substring(firstBrace, lastBrace + 1);
+        const generated = await model.generateContent(prompt);
+        let cleanText = generated.response.text().replace(/```json/gi, "").replace(/```/g, "").trim();
 
-    const aiResult = JSON.parse(cleanText);
+        const firstBrace = cleanText.indexOf('{');
+        const lastBrace = cleanText.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1) cleanText = cleanText.substring(firstBrace, lastBrace + 1);
 
-    // 4. DB 저장
-    const now = new Date();
-    const kstTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Seoul"}));
-    const today = kstTime.toISOString().split('T')[0];
+        const aiResult = JSON.parse(cleanText);
 
-    await supabaseAdmin.from('market_insights').delete().eq('target_date', today);
+        // 4. DB 저장
+        const now = new Date();
+        const kstTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+        const today = kstTime.toISOString().split('T')[0];
 
-    const { error: insertError } = await supabaseAdmin.from('market_insights').insert({
-        target_date: today,
-        ...data,
-        ai_weather: aiResult.ai_weather,
-        ai_summary: aiResult.ai_summary,
-        ai_report: aiResult.ai_report
-    });
+        await supabaseAdmin.from('market_insights').delete().eq('target_date', today);
 
-    if (insertError) throw insertError;
+        const { error: insertError } = await supabaseAdmin.from('market_insights').insert({
+            target_date: today,
+            ...data,
+            ai_weather: aiResult.ai_weather,
+            ai_summary: aiResult.ai_summary,
+            ai_report: aiResult.ai_report
+        });
 
-    return NextResponse.json({ success: true, date: today });
+        if (insertError) throw insertError;
 
-  } catch (error: any) {
-    console.error("Insight Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+        return NextResponse.json({ success: true, date: today });
+
+    } catch (error: any) {
+        console.error("Insight Error:", error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 }
