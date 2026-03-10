@@ -44,32 +44,45 @@ export async function GET(req: NextRequest) {
 
         if (data.usd_krw === 0 && data.nasdaq === 0) throw new Error("주요 지표 수집 실패");
 
-        // 2. 네이버 뉴스 API (과거 기사 차단 및 최신 24시간 기사만 필터링)
-        let newsHeadlines = "";
+        // 2. 네이버 뉴스 API (테마별 다각화 및 기사 본문 요약 포함)
+        let newsContext = "";
         try {
-            // 넉넉하게 15개를 '최신순(date)'으로 가져옴
-            const newsItems = await fetchNaverNewsByKeyword("글로벌 경제 OR 미국 연준 금리 OR 지정학적 위기 OR 코스피 시황", {
-                display: 15,
-                sort: 'date' // ✅ 'sim'(정확도순)에서 'date'(최신순)으로 변경
-            });
+            // ✅ 4가지 핵심 테마로 나누어 골고루 검색
+            const searchThemes = [
+                "미국 연준 OR 인플레이션 OR 금리", // 매크로/정책
+                "나스닥 OR 월가 증시 OR 빅테크",    // 글로벌/미국 증시
+                "코스피 OR 외국인 수급 OR K배터리",  // 국내 증시/섹터
+                "지정학적 위기 OR 원유 폭등 OR 전쟁" // 리스크/원자재
+            ];
 
-            // ✅ 24시간 이내에 작성된 기사만 걸러내는 로직 (과거 리스크 완벽 차단)
+            let combinedNews: string[] = [];
             const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-            const recentNews = newsItems
-                .filter(item => new Date(item.pubDate) >= yesterday)
-                .slice(0, 10); // 필터링된 것 중 상위 10개만 추출
 
-            if (recentNews.length > 0) {
-                newsHeadlines = recentNews.map(item => `- ${item.title.replace(/<[^>]*>?/gm, '').replace(/&quot;/g, '"')}`).join('\n');
+            // 각 테마별로 최신 기사를 검색하여 상위 3개씩만 추출 (총 12개 뉴스)
+            for (const theme of searchThemes) {
+                const newsItems = await fetchNaverNewsByKeyword(theme, { display: 10, sort: 'date' });
+                const recentNews = newsItems.filter(item => new Date(item.pubDate) >= yesterday).slice(0, 3);
+
+                recentNews.forEach(item => {
+                    const cleanTitle = item.title.replace(/<[^>]*>?/gm, '').replace(/&quot;/g, '"');
+                    // ✅ 기사 본문 요약(description) 추가 정제
+                    const cleanDesc = item.description.replace(/<[^>]*>?/gm, '').replace(/&quot;/g, '"');
+                    // AI가 테마별로 인식하기 쉽게 포맷팅
+                    combinedNews.push(`[${theme.split(' ')[0]} 이슈] ${cleanTitle}\n  └ 요약: ${cleanDesc}`);
+                });
+            }
+
+            if (combinedNews.length > 0) {
+                newsContext = combinedNews.join('\n\n');
             } else {
-                newsHeadlines = "최근 24시간 내 관련 주요 뉴스가 없습니다.";
+                newsContext = "최근 24시간 내 관련 주요 뉴스가 없습니다.";
             }
         } catch (e) {
             console.warn("뉴스 수집 실패:", e);
-            newsHeadlines = "최신 뉴스를 불러오지 못했습니다.";
+            newsContext = "최신 뉴스를 불러오지 못했습니다.";
         }
 
-        // 3. AI 프롬프트 극한 고도화 (뻔한 소리 금지, 입체적 분석 강제)
+        // 3. AI 프롬프트 극한 고도화
         const prompt = `
       당신은 30년 경력의 월스트리트 수석 매크로 전략가입니다. 매일 똑같은 뻔한 시황을 읽어주는 것을 가장 혐오하며, 군중이 보지 못하는 뉴스 이면의 '진짜 내러티브'와 '자금의 이동(Money Move)'을 포착해내는 능력이 탁월합니다.
 
@@ -79,19 +92,19 @@ export async function GET(req: NextRequest) {
       - 미 10년물 금리: ${data.us10y}% / VIX(공포): ${data.vix}
       - 원유(WTI): $${data.wti} / 금: $${data.gold} / 비트코인: $${data.bitcoin}
 
-      [오늘 시장을 지배하는 주요 뉴스 (정성적)]
-      ${newsHeadlines}
+      [오늘 시장을 지배하는 다각적 뉴스 브리핑 (정성적)]
+      ${newsContext}
 
       [절대 준수 지시사항]
-      1. '외국인 수급 이탈 우려', '관망세가 필요합니다' 같은 진부하고 교과서적인 표현을 절대 쓰지 마세요. 매일 멘트가 달라져야 합니다.
-      2. 금, 비트코인, 원유 같은 대체 자산의 움직임이 뉴스의 '어떤 이슈'와 맞물려 움직이고 있는지 해석하세요. (예: 전쟁 공포로 금과 달러 동반 상승 등)
+      1. '외국인 수급 이탈 우려', '관망세가 필요합니다' 같은 진부하고 교과서적인 표현을 절대 쓰지 마세요.
+      2. 제공된 [다각적 뉴스 브리핑]의 내용을 매크로 수치와 결합하여 인과관계를 설명하세요. (예: 뉴스에 나온 특정 지정학적 사건이 WTI 유가를 어떻게 자극했고, 이것이 나스닥의 특정 섹터에 어떤 영향을 미쳤는지)
       3. 이런 글로벌 자금 흐름이 오늘 '한국 코스피 시장의 특정 섹터(예: 에너지, 방산, 반도체 등)'에 어떤 기회나 위협이 될지 콕 집어 정성적으로 묘사하세요.
       4. 결과는 무조건 순수 JSON으로만 출력하세요.
 
       {
         "ai_weather": "SUNNY", // 시장 전망. 안도/리스크온=SUNNY, 혼조세/순환매=CLOUDY, 공포/리스크오프=RAINY 중 택 1
-        "ai_summary": "금과 달러로 피신하는 스마트머니. 반도체는 쉬어가고 에너지/방산이 주도하는 철저한 리스크오프 장세.", // 날카롭고 직관적인 1줄 요약 (매일 달라야 함)
-        "ai_report": "밤사이 터진 중동 지정학적 마찰 뉴스가 WTI 유가를 끌어올리고 비트코인에서 자금을 빼내 전통적 안전자산인 금으로 이동시키고 있습니다. ... (중략) ... 이는 수출 중심의 한국 증시에 치명적이며, 특히 나스닥과 동조화되는 반도체 섹터의 강한 하방 압력이 예상됩니다. 오늘은 현금을 쥐고 방산이나 해운 등 헷지 테마의 단기 변동성만 노리는 게스트하우스 전략이 유리합니다." // 뉴스 내러티브와 지표를 엮은 날카로운 3~5문장 분석
+        "ai_summary": "엔비디아 발 훈풍과 연준의 비둘기파적 발언이 맞물려 반도체 주도의 리스크 온 랠리가 전개되는 장세.", // 날카롭고 직관적인 1줄 요약 (매일 달라야 함)
+        "ai_report": "밤사이 연준 인사들의 비둘기파적 발언(뉴스 요약 참고)이 국채 금리 하락을 유도하며 글로벌 증시의 숨통을 틔웠습니다. 특히 나스닥의 반등과 맞물려 필라델피아 반도체 지수가 강하게 튀어 올랐으며, 이는 오늘 코스피 시장에서 외국인들의 반도체 및 AI 밸류체인 쇼트 커버링(공매도 상환)을 강하게 유발할 촉매가 됩니다. 지정학적 리스크가 제한적인 가운데, 당분간 대형 기술주 중심의 비중 확대가 유효합니다."
       }
     `;
 
