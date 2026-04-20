@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import YahooFinance from 'yahoo-finance2';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { sendTelegramMessage } from '@/lib/telegram';
+import { verifyCronRequest } from '@/lib/cronAuth';
+import { enforceRateLimit, getClientIp } from '@/lib/rateLimit';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { fetchNaverNewsByKeyword } from '@/lib/naverNewsClient';
 
@@ -10,10 +12,18 @@ const yahooFinance = new YahooFinance();
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
 export async function GET(req: NextRequest) {
-    const { searchParams } = new URL(req.url);
+    const ip = getClientIp(req)
+    const limited = enforceRateLimit(`cron:market-insight:${ip}`, 5, 60_000)
+    if (!limited.ok) {
+        return NextResponse.json(
+            { error: 'Too many requests' },
+            { status: 429, headers: { 'Retry-After': String(limited.retryAfterSec) } }
+        )
+    }
 
-    if (searchParams.get('key') !== process.env.CRON_SECRET) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const auth = verifyCronRequest(req);
+    if (!auth.ok) {
+        return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
     try {

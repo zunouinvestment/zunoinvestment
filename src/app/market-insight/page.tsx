@@ -55,7 +55,11 @@ export default function MarketInsightPage() {
 
     setIsUpdating(true);
     try {
-      const res = await fetch(`/api/cron/market-insight?key=${secretKey}`);
+      const res = await fetch('/api/cron/market-insight', {
+        headers: {
+          Authorization: `Bearer ${secretKey}`,
+        },
+      });
       const result = await res.json();
 
       if (res.ok && result.success) {

@@ -3,15 +3,25 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { fetchOversoldStocks } from '@/lib/stockData';
 import { sendTelegramMessage } from '@/lib/telegram';
+import { verifyCronRequest } from '@/lib/cronAuth';
+import { enforceRateLimit, getClientIp } from '@/lib/rateLimit';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  
-  if (searchParams.get('key') !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const ip = getClientIp(req)
+  const limited = enforceRateLimit(`cron:daily-recommend:${ip}`, 5, 60_000)
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: 'Too many requests' },
+      { status: 429, headers: { 'Retry-After': String(limited.retryAfterSec) } }
+    )
+  }
+
+  const auth = verifyCronRequest(req);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
   try {

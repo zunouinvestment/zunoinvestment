@@ -5,6 +5,7 @@ import { createServerClient } from '@supabase/ssr'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { fetchNaverNewsByKeyword } from '@/lib/naverNewsClient'
 import { simpleKoreanSentiment } from '@/lib/sentiment'
+import { enforceRateLimit, getClientIp } from '@/lib/rateLimit'
 
 type StockItemActiveRow = {
   user_id: string
@@ -33,6 +34,15 @@ function extractProviderFromTitle(title: string): string | null {
 }
 
 export async function POST(_req: NextRequest) {
+  const ip = getClientIp(_req)
+  const limited = enforceRateLimit(`news:collect-my:${ip}`, 10, 60_000)
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: 'Too many requests' },
+      { status: 429, headers: { 'Retry-After': String(limited.retryAfterSec) } }
+    )
+  }
+
   const cookieStore = await cookies()
 
   const supabase = createServerClient(

@@ -169,7 +169,11 @@ export default function AIRecommendPage() {
     if (!key) return
     setIsAnalyzing(true)
     try {
-        const res = await fetch(`/api/cron/daily-recommend?key=${key}`)
+        const res = await fetch('/api/cron/daily-recommend', {
+          headers: {
+            Authorization: `Bearer ${key}`,
+          },
+        })
         const result = await res.json()
         if (!res.ok) throw new Error(result.error)
         alert(`✅ 분석 완료!`)

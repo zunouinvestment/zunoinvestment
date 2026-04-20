@@ -220,14 +220,15 @@ export default function ResultPage() {
     field: 'sellPrice' | 'realProfit',
     value: string,
   ): void => {
-    const num = Number(value);
+    const normalized = value.replace(/,/g, '').trim();
+    const num = Number(normalized);
     setRows((prev) =>
       prev.map((row) =>
         row.id === id
           ? {
               ...row,
               [field]:
-                Number.isNaN(num) || value === '' ? 0 : num,
+                Number.isNaN(num) || normalized === '' ? 0 : num,
             }
           : row,
       ),
@@ -427,6 +428,11 @@ export default function ResultPage() {
     if (value > 0) return 'text-red-600';
     if (value < 0) return 'text-blue-600';
     return 'text-gray-500';
+  };
+
+  const formatInputNumber = (value: number): string => {
+    if (!value) return '';
+    return value.toLocaleString();
   };
 
   // ---------- 계산 로직 ----------
@@ -648,6 +654,27 @@ export default function ResultPage() {
 
                   <div className="flex flex-col gap-0.5">
                     <span className="text-xs text-gray-500">
+                      평균단가
+                    </span>
+                    <span>
+                      {row.avgPrice
+                        ? formatNumber(row.avgPrice)
+                        : '-'}
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs text-gray-500">
+                      수량
+                    </span>
+                    <span>
+                      {row.quantity
+                        ? formatNumber(row.quantity)
+                        : '-'}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs text-gray-500">
                       총매도액
                     </span>
                     <span>
@@ -726,14 +753,10 @@ export default function ResultPage() {
                         매도가액
                       </span>
                       <input
-                        type="number"
+                        type="text"
+                        inputMode="numeric"
                         className="w-full rounded border px-2 py-1 text-right text-xs sm:text-sm"
-                        value={
-                          Number.isNaN(row.sellPrice)
-                            ? ''
-                            : row.sellPrice
-                        }
-                        step="1"
+                        value={formatInputNumber(row.sellPrice)}
                         onChange={(e) =>
                           handleNumberChange(
                             row.id,
@@ -752,14 +775,10 @@ export default function ResultPage() {
                         실제 수익금(세후)
                       </span>
                       <input
-                        type="number"
+                        type="text"
+                        inputMode="numeric"
                         className="w-full rounded border px-2 py-1 text-right text-xs sm:text-sm"
-                        value={
-                          Number.isNaN(row.realProfit)
-                            ? ''
-                            : row.realProfit
-                        }
-                        step="1"
+                        value={formatInputNumber(row.realProfit)}
                         onChange={(e) =>
                           handleNumberChange(
                             row.id,

@@ -53,6 +53,23 @@ type StocksSearchApiResponse = {
   error?: string;
 };
 
+type DailyTrendRow = {
+  date: string;
+  close: number;
+  open: number;
+  high: number;
+  low: number;
+  volume: number;
+  foreignNet: number | null;
+  institutionNet: number | null;
+};
+
+type KisHistoryApiResponse = {
+  code: string;
+  rows: DailyTrendRow[];
+  error?: string;
+};
+
 export default function NowPage() {
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -71,6 +88,19 @@ export default function NowPage() {
 
   const [isAutoRefresh, setIsAutoRefresh] =
     useState<boolean>(false);
+  const [selectedRowId, setSelectedRowId] =
+    useState<string | null>(null);
+  const [detailLoadingCode, setDetailLoadingCode] =
+    useState<string | null>(null);
+  const [detailMap, setDetailMap] = useState<
+    Record<string, DailyTrendRow[]>
+  >({});
+  const [chartWindowSize, setChartWindowSize] =
+    useState<number>(40);
+  const [hoveredCandleIdx, setHoveredCandleIdx] =
+    useState<number | null>(null);
+  const [showCloseLine, setShowCloseLine] =
+    useState<boolean>(true);
 
   // 검색 팝업 상태
   const [isSearchOpen, setIsSearchOpen] =
@@ -583,6 +613,35 @@ export default function NowPage() {
     );
   };
 
+  const getTrendForCode = (code: string): DailyTrendRow[] =>
+    detailMap[code] ?? [];
+
+  const handleSelectRow = async (row: NowRow): Promise<void> => {
+    const nextId = selectedRowId === row.id ? null : row.id;
+    setSelectedRowId(nextId);
+    setHoveredCandleIdx(null);
+    if (!nextId) return;
+
+    if (detailMap[row.code]) return;
+
+    try {
+      setDetailLoadingCode(row.code);
+      const res = await fetch(
+        `/api/kis/history?code=${encodeURIComponent(row.code)}`
+      );
+      const data = (await res.json()) as KisHistoryApiResponse;
+      if (!res.ok) {
+        throw new Error(data.error ?? '일봉 데이터를 불러오지 못했습니다.');
+      }
+      setDetailMap((prev) => ({ ...prev, [row.code]: data.rows ?? [] }));
+    } catch (error) {
+      console.error(error);
+      setErrorMsg('종목 상세 데이터를 불러오는 중 오류가 발생했습니다.');
+    } finally {
+      setDetailLoadingCode(null);
+    }
+  };
+
   // ---------- 숫자 포맷터 ----------
   const formatNumber = (
     value: number | string | undefined,
@@ -593,6 +652,426 @@ export default function NowPage() {
     if (Number.isNaN(num)) return '-';
     return num.toLocaleString();
   };
+
+  const formatSigned = (value: number | null): string => {
+    if (value === null || Number.isNaN(value)) return '-';
+    const sign = value > 0 ? '+' : '';
+    return `${sign}${value.toLocaleString()}`;
+  };
+
+  const getSignedColorClass = (value: number | null): string => {
+    if (value === null || Number.isNaN(value) || value === 0) {
+      return 'text-gray-700';
+    }
+    return value > 0 ? 'text-red-600' : 'text-blue-600';
+  };
+
+  const calcEmaSeries = (values: number[], period: number): Array<number | null> => {
+    const result: Array<number | null> = new Array(values.length).fill(null);
+    if (values.length < period) return result;
+    const k = 2 / (period + 1);
+    let ema =
+      values.slice(0, period).reduce((sum, v) => sum + v, 0) / period;
+    result[period - 1] = ema;
+    for (let i = period; i < values.length; i += 1) {
+      ema = values[i] * k + ema * (1 - k);
+      result[i] = ema;
+    }
+    return result;
+  };
+
+  const calcIndicators = (trend: DailyTrendRow[]) => {
+    const closes = trend.map((t) => t.close);
+    const lastClose = closes[closes.length - 1] ?? 0;
+
+    const ma = (period: number): number | null => {
+      const slice = closes.slice(-period);
+      if (slice.length < period) return null;
+      return slice.reduce((sum, v) => sum + v, 0) / period;
+    };
+
+    const ma5 = ma(5);
+    const ma20 = ma(20);
+
+    let rsi14: number | null = null;
+    if (closes.length >= 15) {
+      const diffs = closes.slice(1).map((v, i) => v - closes[i]);
+      const recent = diffs.slice(-14);
+      const avgGain =
+        recent
+          .filter((d) => d > 0)
+          .reduce((sum, d) => sum + d, 0) / 14;
+      const avgLoss =
+        Math.abs(
+          recent
+            .filter((d) => d < 0)
+            .reduce((sum, d) => sum + d, 0)
+        ) / 14;
+      if (avgLoss === 0) rsi14 = 100;
+      else {
+        const rs = avgGain / avgLoss;
+        rsi14 = 100 - 100 / (1 + rs);
+      }
+    }
+
+    const ema12 = calcEmaSeries(closes, 12);
+    const ema26 = calcEmaSeries(closes, 26);
+    const macdSeries = closes.map((_, idx) => {
+      if (ema12[idx] === null || ema26[idx] === null) return null;
+      return (ema12[idx] as number) - (ema26[idx] as number);
+    });
+    const macdValues = macdSeries.map((v) => v ?? 0);
+    const signalSeries = calcEmaSeries(macdValues, 9);
+    const lastMacd = macdSeries[macdSeries.length - 1];
+    const lastSignal = signalSeries[signalSeries.length - 1];
+    const lastHist =
+      lastMacd !== null && lastSignal !== null ? lastMacd - lastSignal : null;
+
+    let bbMiddle: number | null = null;
+    let bbUpper: number | null = null;
+    let bbLower: number | null = null;
+    if (closes.length >= 20) {
+      const recent = closes.slice(-20);
+      bbMiddle = recent.reduce((sum, v) => sum + v, 0) / 20;
+      const variance =
+        recent.reduce((sum, v) => sum + (v - bbMiddle!) ** 2, 0) / 20;
+      const stdDev = Math.sqrt(variance);
+      bbUpper = bbMiddle + 2 * stdDev;
+      bbLower = bbMiddle - 2 * stdDev;
+    }
+
+    const volumeAvg5 =
+      trend.slice(-5).reduce((sum, row) => sum + row.volume, 0) /
+      Math.min(5, trend.length);
+    const volumeRatio =
+      volumeAvg5 > 0 ? trend[trend.length - 1].volume / volumeAvg5 : null;
+
+    return {
+      lastClose,
+      ma5,
+      ma20,
+      rsi14,
+      macd: lastMacd,
+      signal: lastSignal,
+      histogram: lastHist,
+      bbMiddle,
+      bbUpper,
+      bbLower,
+      volumeRatio,
+    };
+  };
+
+  const getVisibleTrend = (trend: DailyTrendRow[]): DailyTrendRow[] => {
+    if (trend.length <= chartWindowSize) return trend;
+    return trend.slice(-chartWindowSize);
+  };
+
+  const handleZoomIn = (trendLength: number) => {
+    if (trendLength <= 10) return;
+    setChartWindowSize((prev) => Math.max(10, Math.floor(prev * 0.75)));
+  };
+
+  const handleZoomOut = (trendLength: number) => {
+    setChartWindowSize((prev) => Math.min(trendLength, Math.ceil(prev * 1.25)));
+  };
+
+  const renderCandlestickChart = (trend: DailyTrendRow[]) => {
+    const visibleTrend = getVisibleTrend(trend);
+
+    if (trend.length < 2) {
+      return (
+        <div className="rounded border border-dashed border-gray-200 px-3 py-4 text-xs text-gray-500">
+          차트를 그릴 데이터가 부족합니다.
+        </div>
+      );
+    }
+
+    const lows = visibleTrend.map((d) => d.low);
+    const highs = visibleTrend.map((d) => d.high);
+    const min = Math.min(...lows);
+    const max = Math.max(...highs);
+    const range = max - min || 1;
+    const width = 640;
+    const height = 260;
+    const candleWidth = Math.max(4, width / (visibleTrend.length * 1.6));
+    const step = width / visibleTrend.length;
+    const y = (price: number) => height - ((price - min) / range) * height;
+    const closeLinePoints = visibleTrend
+      .map((item, idx) => {
+        const xCenter = idx * step + step / 2;
+        return `${xCenter},${y(item.close)}`;
+      })
+      .join(' ');
+    const gridTicks = 5;
+    const hovered =
+      hoveredCandleIdx !== null ? visibleTrend[hoveredCandleIdx] : null;
+    const hoveredPrev =
+      hoveredCandleIdx !== null && hoveredCandleIdx > 0
+        ? visibleTrend[hoveredCandleIdx - 1]
+        : null;
+    const hoveredChange =
+      hovered && hoveredPrev ? hovered.close - hoveredPrev.close : null;
+    const hoveredPct =
+      hoveredChange !== null &&
+      hoveredPrev &&
+      hoveredPrev.close !== 0
+        ? (hoveredChange / hoveredPrev.close) * 100
+        : null;
+
+    return (
+      <div className="rounded border border-gray-200 bg-white p-2">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="text-[11px] text-gray-600 sm:text-xs">
+            표시 구간: 최근 <strong>{visibleTrend.length}</strong>일
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px] sm:text-xs">
+            {[20, 40, 60].map((n) => (
+              <button
+                key={n}
+                type="button"
+                className={`rounded border px-2 py-0.5 ${
+                  chartWindowSize === n
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-300 text-gray-700'
+                }`}
+                onClick={() => setChartWindowSize(n)}
+              >
+                {n}D
+              </button>
+            ))}
+            <button
+              type="button"
+              className="rounded border border-gray-300 px-2 py-0.5 text-gray-700"
+              onClick={() => setChartWindowSize(trend.length)}
+            >
+              ALL
+            </button>
+            <button
+              type="button"
+              className="rounded border border-gray-300 px-2 py-0.5 text-gray-700"
+              onClick={() => handleZoomIn(trend.length)}
+            >
+              확대 +
+            </button>
+            <button
+              type="button"
+              className="rounded border border-gray-300 px-2 py-0.5 text-gray-700"
+              onClick={() => handleZoomOut(trend.length)}
+            >
+              축소 -
+            </button>
+            <button
+              type="button"
+              className={`rounded border px-2 py-0.5 ${
+                showCloseLine
+                  ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                  : 'border-gray-300 text-gray-700'
+              }`}
+              onClick={() => setShowCloseLine((prev) => !prev)}
+            >
+              라인 {showCloseLine ? 'ON' : 'OFF'}
+            </button>
+          </div>
+        </div>
+        <div className="mb-2 rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-[11px] sm:text-xs">
+          {hovered ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="font-semibold text-gray-800">{hovered.date}</span>
+              <span>시가 {formatNumber(hovered.open)}</span>
+              <span>고가 {formatNumber(hovered.high)}</span>
+              <span>저가 {formatNumber(hovered.low)}</span>
+              <span>종가 {formatNumber(hovered.close)}</span>
+              <span>거래량 {formatNumber(hovered.volume)}</span>
+              <span className={getSignedColorClass(hoveredChange)}>
+                전일비 {hoveredChange === null ? '-' : formatSigned(hoveredChange)}
+              </span>
+              <span className={getSignedColorClass(hoveredPct)}>
+                등락률{' '}
+                {hoveredPct === null
+                  ? '-'
+                  : `${hoveredPct > 0 ? '+' : ''}${hoveredPct.toFixed(2)}%`}
+              </span>
+            </div>
+          ) : (
+            <span className="text-gray-600">
+              캔들에 마우스를 올리면 시가/고가/저가/종가/거래량/전일비가 표시됩니다.
+            </span>
+          )}
+        </div>
+        <svg viewBox={`0 0 ${width} ${height}`} className="h-56 w-full">
+          {Array.from({ length: gridTicks }).map((_, i) => {
+            const ratio = i / (gridTicks - 1);
+            const yy = ratio * height;
+            const price = max - ratio * range;
+            return (
+              <g key={`grid-${i}`}>
+                <line
+                  x1={0}
+                  x2={width}
+                  y1={yy}
+                  y2={yy}
+                  stroke="#e5e7eb"
+                  strokeWidth={1}
+                />
+                <text
+                  x={width - 4}
+                  y={yy - 2}
+                  textAnchor="end"
+                  fontSize="10"
+                  fill="#6b7280"
+                >
+                  {Math.round(price).toLocaleString()}
+                </text>
+              </g>
+            );
+          })}
+          {visibleTrend.map((item, idx) => {
+            const xCenter = idx * step + step / 2;
+            const isUp = item.close >= item.open;
+            const color = isUp ? '#dc2626' : '#2563eb';
+            const bodyTop = y(Math.max(item.open, item.close));
+            const bodyBottom = y(Math.min(item.open, item.close));
+            const bodyHeight = Math.max(2, bodyBottom - bodyTop);
+            return (
+              <g
+                key={item.date}
+                onMouseEnter={() => setHoveredCandleIdx(idx)}
+                onMouseLeave={() => setHoveredCandleIdx(null)}
+              >
+                <line
+                  x1={xCenter}
+                  x2={xCenter}
+                  y1={y(item.high)}
+                  y2={y(item.low)}
+                  stroke={color}
+                  strokeWidth={1.2}
+                />
+                <rect
+                  x={xCenter - candleWidth / 2}
+                  y={bodyTop}
+                  width={candleWidth}
+                  height={bodyHeight}
+                  fill={isUp ? '#fee2e2' : '#dbeafe'}
+                  stroke={color}
+                  strokeWidth={1}
+                />
+              </g>
+            );
+          })}
+          {showCloseLine && (
+            <polyline
+              points={closeLinePoints}
+              fill="none"
+              stroke="#7c3aed"
+              strokeWidth={1.8}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity={0.95}
+            />
+          )}
+          <line
+            x1={0}
+            x2={width}
+            y1={height}
+            y2={height}
+            stroke="#9ca3af"
+            strokeWidth={1}
+          />
+        </svg>
+        <div className="mt-1 flex items-center justify-between text-[11px] text-gray-500">
+          <span>{visibleTrend[0].date}</span>
+          <span>{visibleTrend[Math.floor(visibleTrend.length / 2)].date}</span>
+          <span>{visibleTrend[visibleTrend.length - 1].date}</span>
+        </div>
+      </div>
+    );
+  };
+
+  const buildInsights = (trend: DailyTrendRow[]) => {
+    if (trend.length === 0) return [];
+    const last = trend[trend.length - 1];
+    const prev = trend.length > 1 ? trend[trend.length - 2] : null;
+    const indicator = calcIndicators(trend);
+    const pct =
+      prev && prev.close > 0
+        ? ((last.close - prev.close) / prev.close) * 100
+        : null;
+
+    return [
+      `단기 추세: ${
+        indicator.ma5 && last.close > indicator.ma5
+          ? '5일선 위(단기 강세)'
+          : '5일선 아래(단기 약세)'
+      }`,
+      `중기 추세: ${
+        indicator.ma20 && last.close > indicator.ma20
+          ? '20일선 위 유지'
+          : '20일선 하회'
+      }`,
+      `RSI(14): ${
+        indicator.rsi14 === null
+          ? '계산 데이터 부족'
+          : `${indicator.rsi14.toFixed(1)} (${indicator.rsi14 >= 70 ? '과열권' : indicator.rsi14 <= 30 ? '과매도권' : '중립'})`
+      }`,
+      `MACD: ${
+        indicator.macd === null || indicator.signal === null
+          ? '계산 데이터 부족'
+          : `${indicator.macd.toFixed(2)} / Signal ${indicator.signal.toFixed(2)}`
+      }`,
+      `볼린저밴드: ${
+        indicator.bbUpper === null || indicator.bbLower === null
+          ? '계산 데이터 부족'
+          : `상단 ${indicator.bbUpper.toFixed(0)} / 하단 ${indicator.bbLower.toFixed(0)}`
+      }`,
+      `전일 대비: ${
+        pct === null ? '비교 데이터 부족' : `${pct.toFixed(2)}%`
+      }`,
+      `거래량: ${
+        indicator.volumeRatio === null
+          ? '비교 데이터 부족'
+          : `최근 5일 평균 대비 ${indicator.volumeRatio.toFixed(2)}배`
+      }`,
+    ];
+  };
+
+  const insightHelpMap: Record<string, string> = {
+    '단기 추세':
+      '현재가가 5일 이동평균선 위/아래에 있는지로 단기 모멘텀을 봅니다. 위에 있으면 단기 강세, 아래면 단기 약세로 해석합니다.',
+    '중기 추세':
+      '현재가와 20일 이동평균선 관계입니다. 20일선 위는 중기 우상향 흐름 유지 가능성을, 아래는 추세 약화를 시사합니다.',
+    'RSI(14)':
+      '최근 14일 상승/하락 강도를 0~100으로 표현합니다. 일반적으로 70 이상 과열, 30 이하 과매도로 보지만 추세장에서는 오래 유지될 수 있습니다.',
+    MACD:
+      '12일 EMA와 26일 EMA 차이입니다. MACD가 Signal 위로 올라서면 모멘텀 개선 가능성, 아래로 내려가면 둔화 가능성이 있습니다.',
+    '볼린저밴드':
+      '20일 평균 대비 변동성 범위(상/하단 밴드)입니다. 상단 근접은 과열, 하단 근접은 과매도 가능성을 시사하지만 강한 추세에서는 밴드 워크가 발생할 수 있습니다.',
+    '전일 대비':
+      '직전 거래일 종가 대비 오늘 종가 변동률입니다. 당일 강도 확인용으로 쓰고, 단독 신호보다는 추세/거래량과 함께 보는 것이 좋습니다.',
+    거래량:
+      '오늘 거래량이 최근 5일 평균 대비 몇 배인지 표시합니다. 가격 돌파/이탈 신호의 신뢰도를 확인할 때 유용합니다.',
+  };
+
+  const parseInsightItem = (item: string) => {
+    const idx = item.indexOf(':');
+    if (idx === -1) {
+      return { title: item, value: '', help: '설명 정보가 없습니다.' };
+    }
+    const title = item.slice(0, idx).trim();
+    const value = item.slice(idx + 1).trim();
+    const key =
+      title === 'RSI(14)' ? 'RSI(14)' : title === '볼린저밴드' ? '볼린저밴드' : title;
+    return {
+      title,
+      value,
+      help: insightHelpMap[key] ?? '설명 정보가 없습니다.',
+    };
+  };
+
+  const selectedRow = rows.find((r) => r.id === selectedRowId) ?? null;
+  const selectedTrend = selectedRow
+    ? getTrendForCode(selectedRow.code)
+    : [];
+  const insightItems = buildInsights(selectedTrend);
 
   // ---------- 등락률 포맷 & 색상 ----------
   const formatChangeRate = (
@@ -722,7 +1201,12 @@ export default function NowPage() {
                     return (
                       <tr
                         key={row.id}
-                        className="border-t text-xs md:text-sm"
+                        className={`border-t text-xs md:text-sm cursor-pointer hover:bg-blue-50 ${
+                          selectedRowId === row.id ? 'bg-blue-50/70' : ''
+                        }`}
+                        onClick={() => {
+                          void handleSelectRow(row);
+                        }}
                       >
                         <td className="px-3 py-2">
                           {row.code}
@@ -749,6 +1233,7 @@ export default function NowPage() {
                             value={row.buyDate ?? ''}
                             disabled={!row.isRealBuy || isMutating}
                             onChange={(e) => {
+                              e.stopPropagation();
                               void handleBuyDateChange(
                                 row,
                                 e.target.value,
@@ -762,7 +1247,8 @@ export default function NowPage() {
                             className="h-4 w-4"
                             checked={row.isRealBuy}
                             disabled={isMutating}
-                            onChange={() => {
+                            onChange={(e) => {
+                              e.stopPropagation();
                               void handleToggleRealBuy(row);
                             }}
                           />
@@ -771,7 +1257,8 @@ export default function NowPage() {
                           <button
                             type="button"
                             className="text-xs text-red-600 hover:underline"
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
                               void handleDeleteRow(row);
                             }}
                             disabled={isMutating}
@@ -796,7 +1283,14 @@ export default function NowPage() {
               return (
                 <div
                   key={row.id}
-                  className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm text-[12px]"
+                  className={`rounded-lg border bg-white p-3 shadow-sm text-[12px] ${
+                    selectedRowId === row.id
+                      ? 'border-blue-300'
+                      : 'border-gray-200'
+                  }`}
+                  onClick={() => {
+                    void handleSelectRow(row);
+                  }}
                 >
                   <div className="flex items-start justify-between">
                     <div>
@@ -813,7 +1307,8 @@ export default function NowPage() {
                     <button
                       type="button"
                       className="text-[11px] text-red-600 hover:underline"
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         void handleDeleteRow(row);
                       }}
                       disabled={isMutating}
@@ -847,6 +1342,7 @@ export default function NowPage() {
                         value={row.buyDate ?? ''}
                         disabled={!row.isRealBuy || isMutating}
                         onChange={(e) => {
+                          e.stopPropagation();
                           void handleBuyDateChange(
                             row,
                             e.target.value,
@@ -860,7 +1356,8 @@ export default function NowPage() {
                         className="h-4 w-4"
                         checked={row.isRealBuy}
                         disabled={isMutating}
-                        onChange={() => {
+                        onChange={(e) => {
+                          e.stopPropagation();
                           void handleToggleRealBuy(row);
                         }}
                       />
@@ -872,6 +1369,115 @@ export default function NowPage() {
             })}
           </div>
         </>
+      )}
+
+      {selectedRow && (
+        <section className="rounded-lg border border-blue-100 bg-blue-50/40 p-3 sm:p-4">
+          <div className="mb-3 flex items-end justify-between gap-2">
+            <div>
+              <h2 className="text-base font-bold text-gray-900 sm:text-lg">
+                {selectedRow.name} ({selectedRow.code}) 상세
+              </h2>
+              <p className="text-xs text-gray-600 sm:text-sm">
+                최근 3개월 일별 데이터와 투자 참고 지표
+              </p>
+            </div>
+            <button
+              type="button"
+              className="text-xs text-gray-500 hover:underline"
+              onClick={() => setSelectedRowId(null)}
+            >
+              닫기
+            </button>
+          </div>
+
+          {detailLoadingCode === selectedRow.code ? (
+            <div className="rounded border border-gray-200 bg-white px-3 py-4 text-sm text-gray-500">
+              상세 데이터를 불러오는 중입니다...
+            </div>
+          ) : selectedTrend.length === 0 ? (
+            <div className="rounded border border-dashed border-gray-300 bg-white px-3 py-4 text-sm text-gray-500">
+              일별 시세 데이터가 없습니다.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {renderCandlestickChart(selectedTrend)}
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                {insightItems.map((item) => {
+                  const parsed = parseInsightItem(item);
+                  return (
+                    <div
+                      key={item}
+                      className="rounded border border-blue-100 bg-white px-3 py-2 text-xs text-gray-700 sm:text-sm"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-gray-800">
+                          {parsed.title}
+                        </span>
+                        <span className="group relative inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-gray-300 text-[10px] text-gray-500">
+                          ?
+                          <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-64 -translate-x-1/2 rounded bg-gray-900 px-2 py-1.5 text-[11px] font-normal leading-relaxed text-white group-hover:block">
+                            {parsed.help}
+                          </span>
+                        </span>
+                      </div>
+                      <div className="mt-1">{parsed.value}</div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="overflow-x-auto rounded border border-gray-200 bg-white">
+                <table className="min-w-full text-left text-xs">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      <th className="px-2 py-2">일자</th>
+                      <th className="px-2 py-2 text-right">시가</th>
+                      <th className="px-2 py-2 text-right">고가</th>
+                      <th className="px-2 py-2 text-right">저가</th>
+                      <th className="px-2 py-2 text-right">종가</th>
+                      <th className="px-2 py-2 text-right">거래량</th>
+                      <th className="px-2 py-2 text-right">외국인</th>
+                      <th className="px-2 py-2 text-right">기관</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...selectedTrend]
+                      .reverse()
+                      .slice(0, 20)
+                      .map((row) => (
+                        <tr key={row.date} className="border-t">
+                          <td className="px-2 py-1.5">{row.date}</td>
+                          <td className="px-2 py-1.5 text-right">
+                            {formatNumber(row.open)}
+                          </td>
+                          <td className="px-2 py-1.5 text-right">
+                            {formatNumber(row.high)}
+                          </td>
+                          <td className="px-2 py-1.5 text-right">
+                            {formatNumber(row.low)}
+                          </td>
+                          <td className="px-2 py-1.5 text-right">
+                            {formatNumber(row.close)}
+                          </td>
+                          <td className="px-2 py-1.5 text-right">
+                            {formatNumber(row.volume)}
+                          </td>
+                          <td className="px-2 py-1.5 text-right">
+                            {formatSigned(row.foreignNet)}
+                          </td>
+                          <td className="px-2 py-1.5 text-right">
+                            {formatSigned(row.institutionNet)}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </section>
       )}
 
       {renderSearchModal()}

@@ -226,14 +226,15 @@ export default function StrategyPage() {
     field: 'avgPrice' | 'quantity' | 'targetPrice',
     value: string,
   ): void => {
-    const num = Number(value)
+    const normalized = value.replace(/,/g, '').trim()
+    const num = Number(normalized)
     setRows((prev) =>
       prev.map((row) =>
         row.id === id
           ? {
               ...row,
               [field]:
-                Number.isNaN(num) || value === '' ? 0 : num,
+                Number.isNaN(num) || normalized === '' ? 0 : num,
             }
           : row,
       ),
@@ -371,6 +372,11 @@ export default function StrategyPage() {
     if (value > 0) return 'text-red-600'
     if (value < 0) return 'text-blue-600'
     return 'text-gray-500'
+  }
+
+  const formatInputNumber = (value: number): string => {
+    if (!value || Number.isNaN(value)) return ''
+    return value.toLocaleString()
   }
 
   const formatSignedProfit = (
@@ -755,15 +761,10 @@ export default function StrategyPage() {
                         목표 단가
                       </span>
                       <input
-                        type="number"
+                        type="text"
+                        inputMode="numeric"
                         className="w-full rounded border px-2 py-1 text-right text-xs sm:text-sm"
-                        value={
-                          !targetPrice ||
-                          Number.isNaN(targetPrice)
-                            ? ''
-                            : targetPrice
-                        }
-                        step="1"
+                        value={formatInputNumber(Number(targetPrice ?? 0))}
                         onChange={(e) =>
                           handleFieldChange(
                             row.id,
@@ -816,15 +817,10 @@ export default function StrategyPage() {
                         평균단가
                       </span>
                       <input
-                        type="number"
+                        type="text"
+                        inputMode="numeric"
                         className="w-full rounded border px-2 py-1 text-right text-xs sm:text-sm"
-                        value={
-                          row.avgPrice === 0 ||
-                          Number.isNaN(row.avgPrice)
-                            ? ''
-                            : row.avgPrice
-                        }
-                        step="1"
+                        value={formatInputNumber(row.avgPrice)}
                         onChange={(e) =>
                           handleFieldChange(
                             row.id,
@@ -842,15 +838,10 @@ export default function StrategyPage() {
                         주수
                       </span>
                       <input
-                        type="number"
+                        type="text"
+                        inputMode="numeric"
                         className="w-full rounded border px-2 py-1 text-right text-xs sm:text-sm"
-                        value={
-                          row.quantity === 0 ||
-                          Number.isNaN(row.quantity)
-                            ? ''
-                            : row.quantity
-                        }
-                        step="1"
+                        value={formatInputNumber(row.quantity)}
                         onChange={(e) =>
                           handleFieldChange(
                             row.id,

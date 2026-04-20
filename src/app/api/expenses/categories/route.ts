@@ -1,10 +1,16 @@
 // src/app/api/expenses/categories/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabaseClient'
+import { getServerSupabaseClient, requireUserId } from '@/lib/serverAuth'
 
 // 카테고리 추가
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireUserId()
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+    const supabase = await getServerSupabaseClient()
+
     const body = await req.json()
     // keywords가 문자열로 들어올 경우 배열로 변환 처리 (콤마 구분)
     if (typeof body.keywords === 'string') {
@@ -13,7 +19,7 @@ export async function POST(req: NextRequest) {
     
     const { data, error } = await supabase
       .from('expense_categories')
-      .insert([body])
+      .insert([{ ...body, user_id: auth.userId }])
       .select()
 
     if (error) throw error
@@ -26,6 +32,12 @@ export async function POST(req: NextRequest) {
 // 카테고리 수정
 export async function PATCH(req: NextRequest) {
   try {
+    const auth = await requireUserId()
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+    const supabase = await getServerSupabaseClient()
+
     const body = await req.json()
     const { id, ...updates } = body
 
@@ -37,6 +49,7 @@ export async function PATCH(req: NextRequest) {
       .from('expense_categories')
       .update(updates)
       .eq('id', id)
+      .eq('user_id', auth.userId)
 
     if (error) throw error
     return NextResponse.json({ success: true })
@@ -48,6 +61,12 @@ export async function PATCH(req: NextRequest) {
 // 카테고리 삭제
 export async function DELETE(req: NextRequest) {
   try {
+    const auth = await requireUserId()
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+    const supabase = await getServerSupabaseClient()
+
     const { searchParams } = new URL(req.url)
     const id = searchParams.get('id')
     
@@ -57,6 +76,7 @@ export async function DELETE(req: NextRequest) {
       .from('expense_categories')
       .delete()
       .eq('id', id)
+      .eq('user_id', auth.userId)
 
     if (error) throw error
     return NextResponse.json({ success: true })

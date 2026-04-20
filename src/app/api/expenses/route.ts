@@ -1,10 +1,15 @@
 // src/app/api/expenses/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase as supabaseClient } from '@/lib/supabaseClient'
-import { supabaseAdmin } from '@/lib/supabaseAdmin'
-
-// DB 작업용 클라이언트 (Admin 권한 우선 사용)
-const supabase = supabaseAdmin || supabaseClient
+import { getServerSupabaseClient, requireUserId } from '@/lib/serverAuth'
+import { z } from 'zod'
+const mutationSchema = z.object({
+  transaction_date: z.string().min(8).optional(),
+  amount: z.coerce.number().finite().optional(),
+  description: z.string().trim().min(1).optional(),
+  payment_date: z.string().nullable().optional(),
+  card_company: z.string().optional(),
+  category_id: z.coerce.number().nullable().optional(),
+})
 
 // 날짜 포맷터 (YYYY-MM-DD)
 function formatYMD(year: number, month: number, day: number): string {
@@ -17,6 +22,12 @@ function formatYMD(year: number, month: number, day: number): string {
 
 // GET: 목록 조회
 export async function GET(req: NextRequest) {
+  const auth = await requireUserId()
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status })
+  }
+  const supabase = await getServerSupabaseClient()
+
   const { searchParams } = new URL(req.url)
   const mode = searchParams.get('mode') || 'transaction'
   
@@ -29,6 +40,7 @@ export async function GET(req: NextRequest) {
   let query = supabase
     .from('expenses')
     .select('*, category:expense_categories(*)')
+    .eq('user_id', auth.userId)
     .order(mode === 'payment' ? 'payment_date' : 'transaction_date', { ascending: false })
     .order('id', { ascending: false })
 
@@ -61,12 +73,22 @@ export async function GET(req: NextRequest) {
 // POST: 지출 항목 추가 (✅ 에러 수정됨)
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireUserId()
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+    const supabase = await getServerSupabaseClient()
+
     const body = await req.json()
     
     // 🚨 중요: DB에 없는 필드(category 객체, id 등)를 확실히 제거
     const { id, category, created_at, ...inputData } = body
 
     // 필수 값 체크 (amount가 0일 수도 있으므로 undefined 체크)
+    const parsed = mutationSchema.safeParse(inputData)
+    if (!parsed.success) {
+      return NextResponse.json({ error: '입력값 형식이 올바르지 않습니다.' }, { status: 400 })
+    }
     if (!inputData.transaction_date || inputData.amount === undefined || !inputData.description) {
         return NextResponse.json({ error: '필수 항목(날짜, 금액, 내역)이 누락되었습니다.' }, { status: 400 })
     }
@@ -106,6 +128,7 @@ export async function POST(req: NextRequest) {
     const insertData = {
         ...inputData, // category 등의 필드가 제거된 상태
         payment_date: finalPaymentDate,
+        user_id: auth.userId,
     }
 
     const { error } = await supabase
@@ -123,6 +146,12 @@ export async function POST(req: NextRequest) {
 // PATCH: 내역 수정 (✅ 에러 수정됨)
 export async function PATCH(req: NextRequest) {
   try {
+    const auth = await requireUserId()
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+    const supabase = await getServerSupabaseClient()
+
     const body = await req.json()
     
     // 🚨 중요: DB에 없는 필드를 확실히 제거
@@ -130,6 +159,10 @@ export async function PATCH(req: NextRequest) {
     
     // 빈 날짜 처리
     if (updates.payment_date === '') updates.payment_date = null;
+    const parsed = mutationSchema.safeParse(updates)
+    if (!parsed.success) {
+      return NextResponse.json({ error: '입력값 형식이 올바르지 않습니다.' }, { status: 400 })
+    }
 
     if (!id) return NextResponse.json({ error: 'ID is required' }, { status: 400 })
 
@@ -137,6 +170,7 @@ export async function PATCH(req: NextRequest) {
       .from('expenses')
       .update(updates) // 정제된 데이터만 업데이트
       .eq('id', id)
+      .eq('user_id', auth.userId)
 
     if (error) throw error
     return NextResponse.json({ success: true })
@@ -148,11 +182,21 @@ export async function PATCH(req: NextRequest) {
 // DELETE: 내역 삭제
 export async function DELETE(req: NextRequest) {
   try {
+    const auth = await requireUserId()
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+    const supabase = await getServerSupabaseClient()
+
     const { searchParams } = new URL(req.url)
     const id = searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'ID is required' }, { status: 400 })
 
-    const { error } = await supabase.from('expenses').delete().eq('id', id)
+    const { error } = await supabase
+      .from('expenses')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', auth.userId)
     if (error) throw error
     return NextResponse.json({ success: true })
   } catch (err: any) {

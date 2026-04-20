@@ -1,15 +1,36 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { z } from 'zod'
+import { enforceRateLimit, getClientIp } from '@/lib/rateLimit'
+
+const loginBodySchema = z.object({
+  access_token: z.string().trim().min(1),
+  refresh_token: z.string().trim().min(1),
+})
 
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => null)
-  const access_token = body?.access_token as string | undefined
-  const refresh_token = body?.refresh_token as string | undefined
-
-  if (!access_token || !refresh_token) {
-    return NextResponse.json({ error: 'missing tokens' }, { status: 400 })
+  const ip = getClientIp(req)
+  const limited = enforceRateLimit(`login:${ip}`, 30, 60_000)
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: 'Too many requests' },
+      {
+        status: 429,
+        headers: { 'Retry-After': String(limited.retryAfterSec) },
+      }
+    )
   }
+
+  const body = await req.json().catch(() => null)
+  const parsed = loginBodySchema.safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'invalid request payload', detail: parsed.error.flatten() },
+      { status: 400 }
+    )
+  }
+  const { access_token, refresh_token } = parsed.data
 
   // 응답 객체(여기에 setSession이 심을 Set-Cookie를 담아 보냄)
   const res = NextResponse.json({ ok: true })

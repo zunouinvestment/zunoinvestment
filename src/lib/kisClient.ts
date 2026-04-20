@@ -338,6 +338,9 @@ interface KisDailyPriceItem {
   stck_hgpr: string;      // 고가
   stck_lwpr: string;      // 저가
   acml_vol: string;       // 거래량
+  frgn_ntby_qty?: string; // 외국인 순매수(응답에 따라 없을 수 있음)
+  orgn_ntby_qty?: string; // 기관 순매수(응답에 따라 없을 수 있음)
+  frgn_hldn_qty?: string; // 외국인 보유수량(응답에 따라 없을 수 있음)
 }
 
 interface KisDailyApiResponse {
@@ -348,13 +351,25 @@ interface KisDailyApiResponse {
   output2: KisDailyPriceItem[]; // 일봉 데이터 배열
 }
 
+export interface KisDailyTrendRow {
+  date: string; // YYYY-MM-DD
+  close: number;
+  open: number;
+  high: number;
+  low: number;
+  volume: number;
+  foreignNet: number | null;
+  institutionNet: number | null;
+  foreignHoldingQty: number | null;
+}
+
 // 내부 함수: 토큰을 받아 일봉 데이터 요청 (상단의 APP_KEY/APP_SECRET 사용)
 async function requestDailyHistoryWithToken(
   code: string,
   token: string,
   startDate: string,
   endDate: string
-): Promise<number[]> {
+): Promise<KisDailyTrendRow[]> {
   const params = new URLSearchParams({
     FID_COND_MRKT_DIV_CODE: 'J',
     FID_INPUT_ISCD: code,
@@ -392,11 +407,30 @@ async function requestDailyHistoryWithToken(
   const output = data.output2;
   if (!output || output.length === 0) return [];
 
-  // 과거 -> 현재 순서로 종가만 추출하여 반환 (KIS는 최신순으로 줌 -> reverse 필요)
+  // 과거 -> 현재 순서로 정렬하여 반환 (KIS는 최신순으로 주는 경우가 많음)
   return output
     .slice(0, 40) // 최대 40일치
-    .map((item) => Number(item.stck_clpr))
-    .reverse(); // [과거, ..., 오늘] 순서
+    .map((item) => ({
+      date: `${item.stck_bsop_date.slice(0, 4)}-${item.stck_bsop_date.slice(4, 6)}-${item.stck_bsop_date.slice(6, 8)}`,
+      close: Number(item.stck_clpr ?? 0),
+      open: Number(item.stck_oprc ?? 0),
+      high: Number(item.stck_hgpr ?? 0),
+      low: Number(item.stck_lwpr ?? 0),
+      volume: Number(item.acml_vol ?? 0),
+      foreignNet:
+        item.frgn_ntby_qty !== undefined
+          ? Number(item.frgn_ntby_qty)
+          : null,
+      institutionNet:
+        item.orgn_ntby_qty !== undefined
+          ? Number(item.orgn_ntby_qty)
+          : null,
+      foreignHoldingQty:
+        item.frgn_hldn_qty !== undefined
+          ? Number(item.frgn_hldn_qty)
+          : null,
+    }))
+    .reverse();
 }
 
 // 🟢 [공개 함수] AI 분석용 일봉 데이터 가져오기 (DB 토큰 재사용)
@@ -411,5 +445,32 @@ export async function getDailyStockHistory(rawCode: string): Promise<number[]> {
 
   const formatDate = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
   
-  return requestDailyHistoryWithToken(code, token, formatDate(past), formatDate(today));
+  const rows = await requestDailyHistoryWithToken(
+    code,
+    token,
+    formatDate(past),
+    formatDate(today)
+  );
+  return rows.map((row) => row.close);
+}
+
+export async function getDailyStockTrend(
+  rawCode: string
+): Promise<KisDailyTrendRow[]> {
+  const code = normalizeStockCode(rawCode);
+  const token = await getKisAccessToken();
+
+  const today = new Date();
+  const past = new Date();
+  past.setMonth(today.getMonth() - 3);
+
+  const formatDate = (d: Date) =>
+    d.toISOString().slice(0, 10).replace(/-/g, '');
+
+  return requestDailyHistoryWithToken(
+    code,
+    token,
+    formatDate(past),
+    formatDate(today)
+  );
 }

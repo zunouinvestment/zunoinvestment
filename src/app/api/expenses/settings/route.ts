@@ -1,25 +1,42 @@
 // src/app/api/expenses/settings/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabaseClient'
+import { getServerSupabaseClient, requireUserId } from '@/lib/serverAuth'
 
 export async function GET() {
-  const { data, error } = await supabase.from('card_settings').select('*').order('id')
+  const auth = await requireUserId()
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status })
+  }
+  const supabase = await getServerSupabaseClient()
+
+  const { data, error } = await supabase
+    .from('card_settings')
+    .select('*')
+    .eq('user_id', auth.userId)
+    .order('id')
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data)
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireUserId()
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status })
+  }
+  const supabase = await getServerSupabaseClient()
+
   const body = await req.json()
   const { card_company, payment_day, usage_start_day, calc_type } = body
   
   const { error } = await supabase
     .from('card_settings')
     .upsert({ 
+      user_id: auth.userId,
       card_company, 
       payment_day, 
       usage_start_day, 
       calc_type: calc_type || 'sliding' 
-    }, { onConflict: 'card_company' })
+    }, { onConflict: 'user_id,card_company' })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ success: true })
@@ -27,6 +44,12 @@ export async function POST(req: NextRequest) {
 
 // ✅ 삭제 기능 추가
 export async function DELETE(req: NextRequest) {
+  const auth = await requireUserId()
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status })
+  }
+  const supabase = await getServerSupabaseClient()
+
   const { searchParams } = new URL(req.url)
   const company = searchParams.get('company')
   
@@ -35,6 +58,7 @@ export async function DELETE(req: NextRequest) {
   const { error } = await supabase
     .from('card_settings')
     .delete()
+    .eq('user_id', auth.userId)
     .eq('card_company', company)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

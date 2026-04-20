@@ -1,6 +1,7 @@
 // src/app/api/news/fetch/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
+import { verifyCronRequest } from '@/lib/cronAuth'
 import { fetchNaverNewsByKeyword } from '@/lib/naverNewsClient'
 import { simpleKoreanSentiment } from '@/lib/sentiment'
 
@@ -10,17 +11,10 @@ type StockItemActiveRow = {
   name: string
 }
 
-const CRON_SECRET = process.env.CRON_SECRET
-
-function checkCronSecret(req: NextRequest): boolean {
-  if (!CRON_SECRET) return true // 설정 안 했으면 그냥 통과 (개발용)
-  const headerValue = req.headers.get('x-cron-secret')
-  return headerValue === CRON_SECRET
-}
-
 export async function GET(req: NextRequest) {
-  if (!checkCronSecret(req)) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  const auth = verifyCronRequest(req)
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status })
   }
 
   // 1. 보유 중(is_sold = false) 종목 목록 가져오기
