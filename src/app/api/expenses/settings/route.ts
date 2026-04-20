@@ -1,12 +1,14 @@
 // src/app/api/expenses/settings/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabaseClient, requireUserId } from '@/lib/serverAuth'
+import { ensureExpenseLegacyOwnership } from '@/lib/expenseLegacyBackfill'
 
 export async function GET() {
   const auth = await requireUserId()
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status })
   }
+  await ensureExpenseLegacyOwnership(auth.userId)
   const supabase = await getServerSupabaseClient()
 
   const { data, error } = await supabase

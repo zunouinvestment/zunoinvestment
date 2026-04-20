@@ -248,8 +248,9 @@ export default function ExpenseTrackerPage() {
       }
       if(Array.isArray(filteredData)) setExpenses(filteredData)
 
-      const { data: catData } = await supabase.from('expense_categories').select('*').order('id')
-      if (catData) setCategories(catData)
+      const resCat = await fetch('/api/expenses/categories')
+      const catData = await resCat.json()
+      if (Array.isArray(catData)) setCategories(catData)
 
       const resSet = await fetch('/api/expenses/settings')
       const setData = await resSet.json()

@@ -14,6 +14,8 @@ type SimulatorItem = {
   current_price: number | null
   reached_target: boolean
   reached_date: string | null
+  reach_days: number | null
+  reach_timing: '기간초과' | '기간내 도달' | null
   max_high_after_recommend: number | null
   current_return_rate: number | null
   sample_days: number
@@ -46,7 +48,7 @@ function formatPercent(value: number | null | undefined): { text: string; classN
 export default function AISimulatorPage() {
   const [fromDate, setFromDate] = useState(() => {
     const d = new Date()
-    d.setDate(d.getDate() - 30)
+    d.setDate(d.getDate() - 3)
     return d.toISOString().slice(0, 10)
   })
   const [toDate, setToDate] = useState(todayIso)
@@ -180,19 +182,20 @@ export default function AISimulatorPage() {
               <th className="px-3 py-2 text-right">현재수익률</th>
               <th className="px-3 py-2 text-right">이후 최고가</th>
               <th className="px-3 py-2">도달 여부</th>
+              <th className="px-3 py-2">도달 구분</th>
               <th className="px-3 py-2">도달일</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={9} className="px-3 py-8 text-center text-gray-500">
+                <td colSpan={10} className="px-3 py-8 text-center text-gray-500">
                   데이터를 불러오는 중입니다...
                 </td>
               </tr>
             ) : sortedItems.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-3 py-8 text-center text-gray-500">
+                <td colSpan={10} className="px-3 py-8 text-center text-gray-500">
                   기간 내 추천 데이터가 없습니다.
                 </td>
               </tr>
@@ -231,10 +234,26 @@ export default function AISimulatorPage() {
                       )}
                     </td>
                     <td className="px-3 py-2">
+                      {item.reached_target ? (
+                        item.reach_timing === '기간초과' ? (
+                          <span className="inline-flex rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
+                            기간초과
+                          </span>
+                        ) : (
+                          <span className="inline-flex rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">
+                            기간내 도달
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-xs text-gray-400">-</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
                       {item.reached_date ? (
                         <span className="inline-flex items-center gap-1 text-xs text-gray-700">
                           <Calendar className="h-3.5 w-3.5 text-gray-500" />
                           {item.reached_date}
+                          {typeof item.reach_days === 'number' ? ` (${item.reach_days}일)` : ''}
                         </span>
                       ) : (
                         <span className="text-xs text-gray-400">-</span>

@@ -1,6 +1,7 @@
 // src/app/api/expenses/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabaseClient, requireUserId } from '@/lib/serverAuth'
+import { ensureExpenseLegacyOwnership } from '@/lib/expenseLegacyBackfill'
 import { z } from 'zod'
 const mutationSchema = z.object({
   transaction_date: z.string().min(8).optional(),
@@ -26,6 +27,7 @@ export async function GET(req: NextRequest) {
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status })
   }
+  await ensureExpenseLegacyOwnership(auth.userId)
   const supabase = await getServerSupabaseClient()
 
   const { searchParams } = new URL(req.url)

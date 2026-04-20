@@ -1,6 +1,27 @@
 // src/app/api/expenses/categories/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabaseClient, requireUserId } from '@/lib/serverAuth'
+import { ensureExpenseLegacyOwnership } from '@/lib/expenseLegacyBackfill'
+
+export async function GET() {
+  const auth = await requireUserId()
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status })
+  }
+  await ensureExpenseLegacyOwnership(auth.userId)
+  const supabase = await getServerSupabaseClient()
+
+  const { data, error } = await supabase
+    .from('expense_categories')
+    .select('*')
+    .eq('user_id', auth.userId)
+    .order('id')
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+  return NextResponse.json(data)
+}
 
 // 카테고리 추가
 export async function POST(req: NextRequest) {

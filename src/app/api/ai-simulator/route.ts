@@ -14,6 +14,15 @@ type RecommendationRow = {
   reason_summary: string | null
 }
 
+function diffDaysInclusive(startDate: string, endDate: string): number | null {
+  const start = new Date(startDate)
+  const end = new Date(endDate)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
+  const ms = end.getTime() - start.getTime()
+  if (ms < 0) return null
+  return Math.floor(ms / (1000 * 60 * 60 * 24))
+}
+
 function toIsoDate(value: string | null): string | null {
   if (!value) return null
   const d = new Date(value)
@@ -123,6 +132,14 @@ export async function GET(req: NextRequest) {
       const reachedTarget =
         reachedDate !== null ||
         (thresholdPrice > 0 && maxHighAfterRec >= thresholdPrice)
+      const reachDays =
+        reachedDate !== null ? diffDaysInclusive(recDate, reachedDate) : null
+      const reachTiming =
+        reachedTarget && reachDays !== null
+          ? reachDays >= 14
+            ? '기간초과'
+            : '기간내 도달'
+          : null
 
       const currentReturnRate =
         currentPrice !== null && entryPrice > 0
@@ -136,6 +153,8 @@ export async function GET(req: NextRequest) {
         current_price: currentPrice,
         reached_target: reachedTarget,
         reached_date: reachedDate,
+        reach_days: reachDays,
+        reach_timing: reachTiming,
         max_high_after_recommend: maxHighAfterRec || null,
         current_return_rate: currentReturnRate,
         sample_days: highRowsCount,
