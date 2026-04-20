@@ -19,6 +19,7 @@ import {
   PieChart,
   Bot,
   Globe, // ✅ 추가된 아이콘
+  FlaskConical,
 } from 'lucide-react'
 
 type NavItem = { name: string; href: string; icon: React.ReactNode }
@@ -37,6 +38,7 @@ const navMenu: NavCategory[] = [
       // ✅ AI Recommend 바로 위에 Market Insight 추가
       { name: 'Market Insight', href: '/market-insight', icon: <Globe className="w-4 h-4" /> },
       { name: 'AI Recommend', href: '/ai-recommend', icon: <Bot className="w-4 h-4" /> },
+      { name: 'AI Simulator', href: '/ai-simulator', icon: <FlaskConical className="w-4 h-4" /> },
       { name: 'Now', href: '/now', icon: <BarChart3 className="w-4 h-4" /> },
       { name: 'Strategy', href: '/strategy', icon: <FileSpreadsheet className="w-4 h-4" /> },
       { name: 'Result', href: '/result', icon: <FileText className="w-4 h-4" /> },

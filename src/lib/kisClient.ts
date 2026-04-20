@@ -368,7 +368,8 @@ async function requestDailyHistoryWithToken(
   code: string,
   token: string,
   startDate: string,
-  endDate: string
+  endDate: string,
+  maxRows = 40
 ): Promise<KisDailyTrendRow[]> {
   const params = new URLSearchParams({
     FID_COND_MRKT_DIV_CODE: 'J',
@@ -409,7 +410,7 @@ async function requestDailyHistoryWithToken(
 
   // 과거 -> 현재 순서로 정렬하여 반환 (KIS는 최신순으로 주는 경우가 많음)
   return output
-    .slice(0, 40) // 최대 40일치
+    .slice(0, maxRows)
     .map((item) => ({
       date: `${item.stck_bsop_date.slice(0, 4)}-${item.stck_bsop_date.slice(4, 6)}-${item.stck_bsop_date.slice(6, 8)}`,
       close: Number(item.stck_clpr ?? 0),
@@ -471,6 +472,27 @@ export async function getDailyStockTrend(
     code,
     token,
     formatDate(past),
-    formatDate(today)
+    formatDate(today),
+    40
+  );
+}
+
+export async function getDailyStockTrendByRange(
+  rawCode: string,
+  startDateIso: string,
+  endDateIso: string,
+  maxRows = 240
+): Promise<KisDailyTrendRow[]> {
+  const code = normalizeStockCode(rawCode);
+  const token = await getKisAccessToken();
+
+  const formatDate = (iso: string) => iso.slice(0, 10).replace(/-/g, '');
+
+  return requestDailyHistoryWithToken(
+    code,
+    token,
+    formatDate(startDateIso),
+    formatDate(endDateIso),
+    maxRows
   );
 }
