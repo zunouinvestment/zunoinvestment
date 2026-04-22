@@ -44,9 +44,9 @@ export async function GET(req: NextRequest) {
 
     // 2. Gemini 분석 요청 (지원 중단된 모델 제외, 최신 생존 모델만 배치)
     const modelsToTry = [
-        "gemini-2.5-flash-lite",     // 1순위: 최신 경량 (무료 할당량 가장 많음, 에러 확률 최소)
-        "gemini-2.5-flash",          // 2순위: 최신 표준 (성능 우수)
-        "gemini-2.0-flash-lite-001"  // 3순위: 구버전 경량 (최후의 보루)
+        "gemini-3.1-flash-lite-preview", // 1순위: Gemini 3.1 Flash-Lite Preview (고빈도·경량)
+        "gemini-2.5-flash-lite",         // 2순위: 프리뷰 실패 시
+        "gemini-2.5-flash",              // 3순위: 표준 Flash
     ];
     
     let result = null;

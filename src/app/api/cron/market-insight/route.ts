@@ -119,7 +119,7 @@ export async function GET(req: NextRequest) {
     `;
 
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.5-flash",
+            model: "gemini-3.1-flash-lite-preview",
             generationConfig: { responseMimeType: "application/json", temperature: 0.7 } // 뻔한 소리를 줄이기 위해 창의성(온도) 대폭 상향
         });
 
