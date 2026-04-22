@@ -126,7 +126,7 @@ export default function Home() {
   }, [])
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] p-6 xl:p-8 bg-white text-black">
+    <div className="min-h-[calc(100vh-4rem)] p-4 sm:p-6 xl:p-8 bg-white text-black">
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
@@ -139,10 +139,10 @@ export default function Home() {
         <p className="mt-1 text-sm text-gray-500">Money is coined liberty.</p>
       </motion.div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
         {/* 날짜/시간 카드 */}
         <Card enterDelay={0.05}>
-          <div className="flex items-start justify-between">
+          <div className="flex items-start justify-between gap-2">
             <CardTitle>오늘</CardTitle>
             <Badge>Now</Badge>
           </div>
@@ -166,8 +166,8 @@ export default function Home() {
           enterDelay={0.12}
           className="bg-gradient-to-br from-rose-50 via-pink-50 to-indigo-50 border-rose-100"
         >
-          <div className="flex items-start justify-between">
-            <CardTitle>👶 베이비 카운트다운</CardTitle>
+          <div className="flex items-start justify-between gap-2 flex-wrap">
+            <CardTitle>👶 뽀니 카운트다운</CardTitle>
             <Badge>✨ D-Day</Badge>
           </div>
           <div className="mt-4">
@@ -178,10 +178,10 @@ export default function Home() {
                 transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
                 className="text-xl"
               >
-                🧸
+                🐴
               </motion.span>
               <motion.p
-                className="text-2xl font-bold tracking-tight text-rose-600"
+                className="text-xl sm:text-2xl font-bold tracking-tight text-rose-600 leading-tight break-words"
                 suppressHydrationWarning
                 animate={{ scale: [1, 1.03, 1] }}
                 transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
@@ -189,10 +189,10 @@ export default function Home() {
                 {pregnancyWeekText || ' '}
               </motion.p>
             </div>
-            <p className="mt-2 text-lg text-gray-700" suppressHydrationWarning>
+            <p className="mt-2 text-base sm:text-lg text-gray-700 break-words" suppressHydrationWarning>
               {daysToMeetText || ' '}
             </p>
-            <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-sm text-gray-700 border border-rose-100">
+            <div className="mt-3 inline-flex max-w-full w-fit flex-wrap items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-xs sm:text-sm text-gray-700 border border-rose-100 leading-relaxed">
               <span>🍼</span>
               <span>출산 예정일: 2026년 12월 7일</span>
             </div>
@@ -211,7 +211,7 @@ export default function Home() {
 
         {/* 날씨 카드 */}
         <Card enterDelay={0.22} className="xl:col-span-1 lg:col-span-2">
-          <div className="flex items-start justify-between">
+          <div className="flex items-start justify-between gap-2">
             <CardTitle>오늘의 날씨</CardTitle>
             <Badge>Live</Badge>
           </div>
@@ -226,7 +226,7 @@ export default function Home() {
               />
               <div>
                 <p className="text-lg font-semibold">{weather.current.condition.text}</p>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-gray-600 break-words">
                   {weather.current.temp_c}℃ · {weather.location.name}
                 </p>
               </div>
@@ -261,7 +261,7 @@ function Card({
         'rounded-2xl bg-white',
         'shadow-[0_2px_30px_rgba(0,0,0,0.06)]',
         'border border-gray-200',
-        'p-5 md:p-6',
+        'p-4 sm:p-5 md:p-6',
         className,
       ].join(' ')}
     >
@@ -271,7 +271,7 @@ function Card({
 }
 
 function CardTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="text-lg font-semibold tracking-tight">{children}</h2>
+  return <h2 className="text-base sm:text-lg font-semibold tracking-tight">{children}</h2>
 }
 
 function Badge({ children }: { children: React.ReactNode }) {
