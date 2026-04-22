@@ -40,6 +40,9 @@ function formatKoreanDate(d: Date) {
 const pad = (n: number) => n.toString().padStart(2, '0')
 
 export default function Home() {
+  const dueDate = new Date(2026, 11, 7) // 2026-12-07
+  const totalPregnancyDays = 280
+
   // ✅ 초기값을 null로 두고, 클라이언트 마운트 이후에만 시간 계산
   const [now, setNow] = useState<Date | null>(null)
   const [weather, setWeather] = useState<WeatherData | null>(null)
@@ -73,6 +76,39 @@ export default function Home() {
     }
     return { dateText, timeText, remainingText }
   }, [now])
+
+  const { pregnancyWeekText, daysToMeetText } = useMemo(() => {
+    if (!now) {
+      return { pregnancyWeekText: '', daysToMeetText: '' }
+    }
+
+    const startOfToday = new Date(now)
+    startOfToday.setHours(0, 0, 0, 0)
+
+    const dueStart = new Date(dueDate)
+    dueStart.setHours(0, 0, 0, 0)
+
+    const diffMs = dueStart.getTime() - startOfToday.getTime()
+    const daysUntilDue = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+    const elapsedDays = totalPregnancyDays - daysUntilDue
+
+    if (daysUntilDue < 0) {
+      const overdueDays = Math.abs(daysUntilDue)
+      return {
+        pregnancyWeekText: `예정일이 ${overdueDays}일 지났어요`,
+        daysToMeetText: '아기를 만나러 가는 중이에요 👶',
+      }
+    }
+
+    const safeElapsedDays = Math.max(0, elapsedDays)
+    const week = Math.floor(safeElapsedDays / 7)
+    const day = safeElapsedDays % 7
+
+    return {
+      pregnancyWeekText: `현재 ${week}주 ${day}일`,
+      daysToMeetText: `아기 만나기까지 ${daysUntilDue}일 남음`,
+    }
+  }, [now, dueDate])
 
   // 날씨는 클라이언트에서만 호출
   useEffect(() => {
@@ -125,8 +161,47 @@ export default function Home() {
           </div>
         </Card>
 
+        {/* 임신 주수 카드 */}
+        <Card
+          enterDelay={0.12}
+          className="bg-gradient-to-br from-rose-50 via-pink-50 to-indigo-50 border-rose-100"
+        >
+          <div className="flex items-start justify-between">
+            <CardTitle>👶 베이비 카운트다운</CardTitle>
+            <Badge>✨ D-Day</Badge>
+          </div>
+          <div className="mt-4">
+            <div className="flex items-center gap-2">
+              <motion.span
+                aria-hidden
+                animate={{ y: [0, -4, 0], rotate: [0, -6, 0, 6, 0] }}
+                transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
+                className="text-xl"
+              >
+                🧸
+              </motion.span>
+              <motion.p
+                className="text-2xl font-bold tracking-tight text-rose-600"
+                suppressHydrationWarning
+                animate={{ scale: [1, 1.03, 1] }}
+                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+              >
+                {pregnancyWeekText || ' '}
+              </motion.p>
+            </div>
+            <p className="mt-2 text-lg text-gray-700" suppressHydrationWarning>
+              {daysToMeetText || ' '}
+            </p>
+            <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-sm text-gray-700 border border-rose-100">
+              <span>🍼</span>
+              <span>출산 예정일: 2026년 12월 7일</span>
+            </div>
+            <p className="mt-3 text-sm text-pink-500">💗 하루하루 소중한 기다림, 곧 만나요!</p>
+          </div>
+        </Card>
+
         {/* 퇴근 카운트다운 카드 */}
-        <Card enterDelay={0.12}>
+        <Card enterDelay={0.18}>
           <CardTitle>퇴근까지</CardTitle>
           <div className="mt-4 text-lg" suppressHydrationWarning>
             {remainingText || ' '}
@@ -135,7 +210,7 @@ export default function Home() {
         </Card>
 
         {/* 날씨 카드 */}
-        <Card enterDelay={0.18} className="xl:col-span-1 lg:col-span-2">
+        <Card enterDelay={0.22} className="xl:col-span-1 lg:col-span-2">
           <div className="flex items-start justify-between">
             <CardTitle>오늘의 날씨</CardTitle>
             <Badge>Live</Badge>
