@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   }
 
   const subscribers = await getTelegramSubscribers();
-  let rows = [];
+  let rows: Awaited<ReturnType<typeof listTelegramSubscribers>> = [];
 
   try {
     rows = await listTelegramSubscribers();
