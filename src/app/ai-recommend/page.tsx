@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation' 
 import { supabase } from '@/lib/supabaseClient'
-import { Bot, TrendingUp, Target, FileText, Info, ChevronDown, ChevronUp, Play, Loader2, RefreshCw, Calendar, Flame, Eye } from 'lucide-react'
+import { Bot, TrendingUp, Target, FileText, Info, ChevronDown, ChevronUp, Play, Loader2, RefreshCw, Calendar, Flame, Eye, Settings } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 // --- 타입 정의 ---
@@ -194,9 +194,18 @@ export default function AIRecommendPage() {
                 <p className="text-sm text-gray-500">매일 오후 5시, 퀀트 알고리즘과 AI가 낙폭과대 종목을 선정합니다.</p>
             </div>
         </div>
-        <button onClick={handleManualAnalysis} disabled={isAnalyzing} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm shadow-md transition-all ${isAnalyzing ? 'bg-gray-100 text-gray-400' : 'bg-white border text-indigo-600 hover:bg-indigo-50'}`}>
-            {isAnalyzing ? <><Loader2 className="w-4 h-4 animate-spin" /> 분석 중...</> : <><Play className="w-4 h-4 fill-indigo-600" /> 지금 즉시 분석하기</>}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={handleManualAnalysis} disabled={isAnalyzing} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm shadow-md transition-all ${isAnalyzing ? 'bg-gray-100 text-gray-400' : 'bg-white border text-indigo-600 hover:bg-indigo-50'}`}>
+              {isAnalyzing ? <><Loader2 className="w-4 h-4 animate-spin" /> 분석 중...</> : <><Play className="w-4 h-4 fill-indigo-600" /> 지금 즉시 분석하기</>}
+          </button>
+          <button
+            onClick={() => router.push('/ai-recommend/admin')}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm shadow-md transition-all bg-white border text-gray-700 hover:bg-gray-50"
+          >
+            <Settings className="w-4 h-4" />
+            관리자 메뉴
+          </button>
+        </div>
       </div>
 
       {/* Hot Stocks */}
