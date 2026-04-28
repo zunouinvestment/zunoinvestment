@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import {
   getActiveSubscribers,
   getRecentMessageLogs,
+  insertTelegramMessageLog,
   sendTelegramMessageToChatId,
 } from '@/lib/telegram';
 
@@ -48,15 +49,14 @@ export async function POST(req: NextRequest) {
 
     const result = await sendTelegramMessageToChatId(chatId, `👤 관리자 답변\n${text}`);
 
-    await supabaseAdmin.from('telegram_message_logs').insert({
-      target_chat_id: chatId,
-      message_type: 'admin_reply',
-      message_text: text,
+    await insertTelegramMessageLog({
+      targetChatId: chatId,
+      messageType: 'admin_reply',
+      messageText: text,
       status: result.ok ? 'success' : 'failed',
-      error_message: result.ok ? null : JSON.stringify(result.data),
+      errorMessage: result.ok ? null : JSON.stringify(result.data),
       payload: result.data,
       source: 'web_admin',
-      sent_at: new Date().toISOString(),
     });
 
     if (!result.ok) {

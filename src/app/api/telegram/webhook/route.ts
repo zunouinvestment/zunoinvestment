@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   getActiveSubscribers,
   getRecentMessageLogs,
+  insertTelegramMessageLog,
   isTelegramAdmin,
   notifyAdminsUserMessage,
   sendAdminMenu,
@@ -26,7 +27,8 @@ export async function POST(req: NextRequest) {
     const update = await req.json();
     const message = update?.message;
     const chatId = message?.chat?.id;
-    const text = String(message?.text || '').trim().toLowerCase();
+    const rawText = String(message?.text || '').trim();
+    const text = rawText.toLowerCase();
 
     if (!chatId) {
       return NextResponse.json({ ok: true, ignored: 'No chat id' });
@@ -39,7 +41,7 @@ export async function POST(req: NextRequest) {
     const isAdmin = isTelegramAdmin(chatIdStr);
 
     if (text.startsWith('/reply ') && isAdmin) {
-      const match = text.match(/^\/reply\s+(-?\d+)\s+([\s\S]+)$/i);
+      const match = rawText.match(/^\/reply\s+(-?\d+)\s+([\s\S]+)$/i);
       if (!match) {
         await sendTelegramMessageToChatId(
           chatIdStr,
@@ -64,7 +66,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    if (text === '/start' || text === '/subscribe') {
+    if (text.startsWith('/start') || text.startsWith('/subscribe')) {
       await upsertTelegramSubscriber({ chatId: chatIdStr, username, firstName, lastName });
       await sendTelegramMessageToChatId(
         chatIdStr,
@@ -122,12 +124,19 @@ export async function POST(req: NextRequest) {
       );
     } else {
       // 일반 사용자의 자유 텍스트는 관리자에게 전달
-      if (!isAdmin && text) {
+      if (!isAdmin && rawText) {
+        await insertTelegramMessageLog({
+          targetChatId: chatIdStr,
+          messageType: 'user_message',
+          messageText: rawText,
+          status: 'success',
+          source: 'webhook_user',
+        });
         await notifyAdminsUserMessage({
           fromChatId: chatIdStr,
           username,
           firstName,
-          text: String(message?.text || ''),
+          text: rawText,
         });
       }
     }

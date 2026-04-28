@@ -181,7 +181,7 @@ export async function sendTelegramMessageToChatId(
   return { ok: response.ok, status: response.status, data };
 }
 
-async function insertMessageLog(row: {
+export async function insertTelegramMessageLog(row: {
   targetChatId: string;
   messageType: string;
   messageText: string;
@@ -226,7 +226,7 @@ export async function logSubscriptionEvent(input: {
 export async function getRecentMessageLogs(limit = 20) {
   const { data, error } = await supabaseAdmin
     .from('telegram_message_logs')
-    .select('target_chat_id, message_type, status, error_message, source, sent_at')
+    .select('target_chat_id, message_type, message_text, status, error_message, source, sent_at')
     .order('sent_at', { ascending: false })
     .limit(limit);
 
@@ -293,7 +293,7 @@ export async function sendTelegramMessage(text: string) {
   for (const chatId of subscribers) {
     try {
       const result = await sendTelegramMessageToChatId(chatId, text);
-      await insertMessageLog({
+      await insertTelegramMessageLog({
         targetChatId: chatId,
         messageType: 'broadcast',
         messageText: text,
@@ -304,7 +304,7 @@ export async function sendTelegramMessage(text: string) {
       });
     } catch (error) {
       console.error(`Telegram Error [${chatId}]:`, error);
-      await insertMessageLog({
+      await insertTelegramMessageLog({
         targetChatId: chatId,
         messageType: 'broadcast',
         messageText: text,
